@@ -1,4 +1,7 @@
 import asyncio
+import io
+import queue
+from album_colors import AlbumArtworkWorker
 import threading
 import time
 from pathlib import Path
@@ -17,10 +20,30 @@ from lotus_lamp import LotusLamp, DeviceConfig
 # ============================================================
 
 APP_NAME = "Olive RGB"
-APP_VERSION = "1.0.3"
+APP_VERSION = "1.3.0-preview"
 
 import os
 import json
+import re
+
+# Semantic GUI colors; lighting colors are independent of appearance.
+THEMES = {
+    "Tickets": dict(background="#F4EEE9", surface="#FFF9F5", text="#171417", log_background="#292329", muted="#756A72", accent_soft="#F08AB6", accent="#F34D9B", border="#D7C9D0", button="#FFFFFF", on_accent="#FFFFFF", hover="#FBE3EE", pressed="#C93679", log_text="#F8EEF2"),
+    "Sakura": dict(background="#21151F", surface="#342330", text="#F7EAF3", log_background="#190F18", muted="#C9AFC0", accent_soft="#D898BC", accent="#FF77B7", border="#75506B", button="#49313F", on_accent="#21151F", hover="#604253", pressed="#D898BC", log_text="#F7EAF3"),
+    "Blackout": dict(background="#111111", surface="#202020", text="#F5F5F5", log_background="#080808", muted="#B8B8B8", accent_soft="#BBBBBB", accent="#EEEEEE", border="#555555", button="#303030", on_accent="#111111", hover="#444444", pressed="#BBBBBB", log_text="#F5F5F5"),
+    "Cyberpunk": dict(background="#140B26", surface="#25143D", text="#F4EAFF", log_background="#0C0618", muted="#C0A9DA", accent_soft="#00DDEB", accent="#FF48CC", border="#705098", button="#382052", on_accent="#140B26", hover="#52316F", pressed="#00DDEB", log_text="#00DDEB"),
+}
+DEFAULT_MUSIC_COLORS = {"bass": "#FF0A46", "mids": "#9614FF", "treble": "#00D2FF", "beat": "#FFFFFF"}
+
+def validated_music_colors(value):
+    value = value if isinstance(value, dict) else {}
+    return {key: value[key].upper() if isinstance(value.get(key), str) and re.fullmatch(r"#[0-9a-fA-F]{6}", value[key]) else default
+            for key, default in DEFAULT_MUSIC_COLORS.items()}
+
+def color_rgb(value):
+    return tuple(int(value[i:i + 2], 16) for i in (1, 3, 5))
+
+
 
 APP_DATA_DIR = Path(os.getenv("APPDATA", str(Path.home()))) / "OliveRGB"
 SETTINGS_FILE = APP_DATA_DIR / "settings.json"
@@ -28,7 +51,8 @@ SETTINGS_FILE = APP_DATA_DIR / "settings.json"
 def load_app_settings():
     try:
         if SETTINGS_FILE.exists():
-            return json.loads(SETTINGS_FILE.read_text(encoding="utf-8"))
+            data = json.loads(SETTINGS_FILE.read_text(encoding="utf-8"))
+            return data if isinstance(data, dict) else {}
     except Exception:
         pass
     return {}
@@ -74,6 +98,9 @@ class BluetoothWorker:
 
         self.last_rgb = None
         self.last_send_time = 0
+        # Serialize BLE writes. Reactive modes can request colors faster than
+        # the underlying GATT client finishes a write/discovery operation.
+        self.rgb_lock = None
 
         self.thread = threading.Thread(
             target=self._start_loop,
@@ -96,6 +123,7 @@ class BluetoothWorker:
         try:
             self.loop = asyncio.new_event_loop()
             asyncio.set_event_loop(self.loop)
+            self.rgb_lock = asyncio.Lock()
             self._debug(f"event loop created; closed={self.loop.is_closed()}")
 
             self._debug("constructing LotusLamp with explicit device config")
@@ -181,6 +209,10 @@ class BluetoothWorker:
 
             await self.lamp.connect()
 
+            # Give Windows/Bleak a brief settling window after GATT connect.
+            # This prevents reactive modes from racing service discovery.
+            await asyncio.sleep(0.75)
+
             self.connected = True
 
             self.status_callback(
@@ -224,11 +256,16 @@ class BluetoothWorker:
             return
 
         try:
-            await self.lamp.set_rgb(
-                int(r),
-                int(g),
-                int(b)
-            )
+            # Only one GATT color write may be in flight at a time.
+            # This keeps Music/Movie/Gaming from racing Bleak service setup.
+            if self.rgb_lock is None:
+                return
+            async with self.rgb_lock:
+                await self.lamp.set_rgb(
+                    int(r),
+                    int(g),
+                    int(b)
+                )
 
         except Exception as e:
             self.log_callback(
@@ -353,6 +390,7 @@ class MusicEngine:
         self.thread = None
 
         self.profile_name = "Reactive"
+        self.colors = validated_music_colors({})
 
         self.user_sensitivity = 1.0
         self.user_smoothing = 1.0
@@ -505,51 +543,9 @@ class MusicEngine:
                 sorted_values[-2]
             )
 
-        # ----------------------------------------
-        # MGK PALETTE
-        # ----------------------------------------
-
-        if self.profile_name == "MGK":
-
-            colors = [
-                np.array(
-                    [255, 8, 65],
-                    dtype=float
-                ),
-
-                np.array(
-                    [255, 30, 145],
-                    dtype=float
-                ),
-
-                np.array(
-                    [255, 150, 210],
-                    dtype=float
-                )
-            ]
-
-        # ----------------------------------------
-        # NORMAL PALETTE
-        # ----------------------------------------
-
-        else:
-
-            colors = [
-                np.array(
-                    [255, 10, 70],
-                    dtype=float
-                ),
-
-                np.array(
-                    [150, 20, 255],
-                    dtype=float
-                ),
-
-                np.array(
-                    [0, 210, 255],
-                    dtype=float
-                )
-            ]
+        palette = self.colors  # One immutable-by-convention snapshot per analysis frame.
+        colors = [np.array(color_rgb(palette[key]), dtype=float)
+                  for key in ("bass", "mids", "treble")]
 
         color = colors[dominant]
 
@@ -571,243 +567,247 @@ class MusicEngine:
 
     def _run(self):
         try:
-            speaker = sc.default_speaker()
-
-            self.log_callback(
-                f"Listening to: {speaker.name}"
-            )
-
-            loopback = sc.get_microphone(
-                speaker.name,
-                include_loopback=True
-            )
-
+            last_speaker_name = None
             self.log_callback(
                 f"🎵 {self.profile_name} music mode started"
             )
 
-            with loopback.recorder(
-                samplerate=AUDIO_SAMPLE_RATE,
-                channels=2
-            ) as recorder:
+            while self.running:
+                speaker = sc.default_speaker()
+                if speaker.name != last_speaker_name:
+                    if last_speaker_name is not None:
+                        self.log_callback(
+                            f"Audio output changed: {last_speaker_name} → {speaker.name}"
+                        )
+                        self.log_callback("Reconnecting audio capture...")
+                    self.log_callback(f"Listening to: {speaker.name}")
+                    last_speaker_name = speaker.name
 
-                while self.running:
+                loopback = sc.get_microphone(
+                    speaker.name,
+                    include_loopback=True
+                )
 
-                    data = recorder.record(
-                        numframes=AUDIO_FRAMES
-                    )
+                with loopback.recorder(
+                    samplerate=AUDIO_SAMPLE_RATE,
+                    channels=2
+                ) as recorder:
 
-                    mono = np.mean(
-                        data,
-                        axis=1
-                    )
+                    next_device_check = time.monotonic() + 0.5
+                    while self.running:
+                        now = time.monotonic()
+                        if now >= next_device_check:
+                            current_speaker = sc.default_speaker()
+                            if current_speaker.name != speaker.name:
+                                break
+                            next_device_check = now + 0.5
 
-                    mono -= np.mean(mono)
+                        data = recorder.record(
+                            numframes=AUDIO_FRAMES
+                        )
 
-                    rms = float(
-                        np.sqrt(
-                            np.mean(
-                                mono ** 2
+                        mono = np.mean(
+                            data,
+                            axis=1
+                        )
+
+                        mono -= np.mean(mono)
+
+                        rms = float(
+                            np.sqrt(
+                                np.mean(
+                                    mono ** 2
+                                )
                             )
                         )
-                    )
 
-                    window = np.hanning(
-                        len(mono)
-                    )
-
-                    spectrum = np.abs(
-                        np.fft.rfft(
-                            mono * window
+                        window = np.hanning(
+                            len(mono)
                         )
-                    )
 
-                    frequencies = (
-                        np.fft.rfftfreq(
-                            len(mono),
-                            1 / AUDIO_SAMPLE_RATE
+                        spectrum = np.abs(
+                            np.fft.rfft(
+                                mono * window
+                            )
                         )
-                    )
 
-                    bands = np.array([
-                        self._band_mean(
-                            spectrum,
-                            frequencies,
-                            *BASS_RANGE
-                        ),
-
-                        self._band_mean(
-                            spectrum,
-                            frequencies,
-                            *MID_RANGE
-                        ),
-
-                        self._band_mean(
-                            spectrum,
-                            frequencies,
-                            *TREBLE_RANGE
+                        frequencies = (
+                            np.fft.rfftfreq(
+                                len(mono),
+                                1 / AUDIO_SAMPLE_RATE
+                            )
                         )
-                    ])
 
-                    if np.all(
-                        self.baselines == 1.0
-                    ):
+                        bands = np.array([
+                            self._band_mean(
+                                spectrum,
+                                frequencies,
+                                *BASS_RANGE
+                            ),
+
+                            self._band_mean(
+                                spectrum,
+                                frequencies,
+                                *MID_RANGE
+                            ),
+
+                            self._band_mean(
+                                spectrum,
+                                frequencies,
+                                *TREBLE_RANGE
+                            )
+                        ])
+
+                        if np.all(
+                            self.baselines == 1.0
+                        ):
+                            self.baselines = (
+                                np.maximum(
+                                    bands,
+                                    0.000001
+                                )
+                            )
+
+                        baseline_speed = 0.035
+
                         self.baselines = (
+                            self.baselines *
+                            (1 - baseline_speed)
+                            +
                             np.maximum(
                                 bands,
                                 0.000001
                             )
+                            * baseline_speed
                         )
 
-                    baseline_speed = 0.035
-
-                    self.baselines = (
-                        self.baselines *
-                        (1 - baseline_speed)
-                        +
-                        np.maximum(
-                            bands,
-                            0.000001
-                        )
-                        * baseline_speed
-                    )
-
-                    relative = bands / (
-                        self.baselines +
-                        1e-9
-                    )
-
-                    relative = np.clip(
-                        relative,
-                        0.15,
-                        4.0
-                    )
-
-                    target_color, dominant = (
-                        self._palette(
-                            relative
-                        )
-                    )
-
-                    profile = self.PROFILES[
-                        self.profile_name
-                    ]
-
-                    sensitivity = (
-                        profile["sensitivity"]
-                        *
-                        self.user_sensitivity
-                    )
-
-                    brightness = np.clip(
-                        rms *
-                        sensitivity *
-                        10.0,
-                        profile["minimum"],
-                        1.0
-                    )
-
-                    beat = self._detect_beat(
-                        rms
-                    )
-
-                    if beat:
-                        brightness = min(
-                            1.0,
-                            brightness +
-                            profile[
-                                "beat_strength"
-                            ]
+                        relative = bands / (
+                            self.baselines +
+                            1e-9
                         )
 
-                        if (
+                        relative = np.clip(
+                            relative,
+                            0.15,
+                            4.0
+                        )
+
+                        target_color, dominant = (
+                            self._palette(
+                                relative
+                            )
+                        )
+
+                        profile = self.PROFILES[
                             self.profile_name
-                            == "MGK"
-                        ):
-                            target_color = (
-                                target_color
-                                * 0.55
-                                +
-                                np.array(
-                                    [255, 220, 235]
-                                )
-                                * 0.45
+                        ]
+
+                        sensitivity = (
+                            profile["sensitivity"]
+                            *
+                            self.user_sensitivity
+                        )
+
+                        brightness = np.clip(
+                            rms *
+                            sensitivity *
+                            10.0,
+                            profile["minimum"],
+                            1.0
+                        )
+
+                        beat = self._detect_beat(
+                            rms
+                        )
+
+                        if beat:
+                            brightness = min(
+                                1.0,
+                                brightness +
+                                profile[
+                                    "beat_strength"
+                                ]
                             )
 
-                    if (
-                        brightness >
-                        self.smoothed_brightness
-                    ):
-                        brightness_alpha = 0.45
-                    else:
-                        brightness_alpha = 0.82
+                            target_color = (
+                                target_color * 0.55
+                                + np.array(color_rgb(self.colors["beat"]), dtype=float) * 0.45
+                            )
 
-                    self.smoothed_brightness = (
-                        self.smoothed_brightness
-                        * brightness_alpha
-                        +
-                        brightness
-                        * (1 - brightness_alpha)
-                    )
+                        if (
+                            brightness >
+                            self.smoothed_brightness
+                        ):
+                            brightness_alpha = 0.45
+                        else:
+                            brightness_alpha = 0.82
 
-                    smoothing = np.clip(
-                        profile["smoothing"]
-                        *
-                        self.user_smoothing,
-                        0.05,
-                        0.96
-                    )
-
-                    if beat:
-                        smoothing *= 0.45
-
-                    output_color = (
-                        self.previous_rgb
-                        * smoothing
-                        +
-                        target_color
-                        * (1 - smoothing)
-                    )
-
-                    self.previous_rgb = (
-                        output_color
-                    )
-
-                    rgb = np.clip(
-                        output_color
-                        *
-                        self.smoothed_brightness,
-                        0,
-                        255
-                    )
-
-                    self.rgb_callback(
-                        int(rgb[0]),
-                        int(rgb[1]),
-                        int(rgb[2])
-                    )
-
-                    normalized = (
-                        relative /
-                        (
-                            np.sum(relative)
-                            + 1e-9
+                        self.smoothed_brightness = (
+                            self.smoothed_brightness
+                            * brightness_alpha
+                            +
+                            brightness
+                            * (1 - brightness_alpha)
                         )
-                    )
 
-                    self.meter_callback(
-                        float(normalized[0]),
-                        float(normalized[1]),
-                        float(normalized[2]),
-                        rms,
-                        rgb,
-                        dominant
-                    )
+                        smoothing = np.clip(
+                            profile["smoothing"]
+                            *
+                            self.user_smoothing,
+                            0.05,
+                            0.96
+                        )
 
-                    if beat:
-                        self.beat_callback()
+                        if beat:
+                            smoothing *= 0.45
 
-                    time.sleep(0.015)
+                        output_color = (
+                            self.previous_rgb
+                            * smoothing
+                            +
+                            target_color
+                            * (1 - smoothing)
+                        )
+
+                        self.previous_rgb = (
+                            output_color
+                        )
+
+                        rgb = np.clip(
+                            output_color
+                            *
+                            self.smoothed_brightness,
+                            0,
+                            255
+                        )
+
+                        self.rgb_callback(
+                            int(rgb[0]),
+                            int(rgb[1]),
+                            int(rgb[2])
+                        )
+
+                        normalized = (
+                            relative /
+                            (
+                                np.sum(relative)
+                                + 1e-9
+                            )
+                        )
+
+                        self.meter_callback(
+                            float(normalized[0]),
+                            float(normalized[1]),
+                            float(normalized[2]),
+                            rms,
+                            rgb,
+                            dominant
+                        )
+
+                        if beat:
+                            self.beat_callback()
+
+                        time.sleep(0.015)
 
         except Exception as e:
             self.log_callback(
@@ -979,680 +979,304 @@ class LampGUI:
 
     def __init__(self, root):
         self.root = root
-
         self.root.title(f"{APP_NAME} v{APP_VERSION}")
-
-        self.root.geometry(
-            "1050x800"
-        )
-
-        self.root.minsize(
-            950,
-            720
-        )
-
-        style = ttk.Style()
-
-        try:
-            style.theme_use(
-                "clam"
-            )
-        except Exception:
-            pass
-
-        style.configure(
-            "Title.TLabel",
-            font=(
-                "Segoe UI",
-                24,
-                "bold"
-            )
-        )
-
-        style.configure(
-            "Big.TButton",
-            font=(
-                "Segoe UI",
-                11,
-                "bold"
-            ),
-            padding=9
-        )
+        self.root.geometry("1080x760")
+        self.root.minsize(920, 680)
 
         self.settings = load_app_settings()
-
-        # ----------------------------------------------------
-        # WORKERS
-        # ----------------------------------------------------
-        # IMPORTANT: workers are started only AFTER the GUI widgets
-        # (especially status_label and log_box) exist. This keeps
-        # background-thread callbacks from touching half-built UI.
+        selected_theme = self.settings.get("ui_theme", "Tickets")
+        self.theme_var = tk.StringVar(value=selected_theme if selected_theme in THEMES else "Tickets")
+        self.music_colors = validated_music_colors(self.settings.get("music_colors"))
+        self.manual_music_colors = dict(self.music_colors)
+        self.music_color_source = tk.StringVar(value=("Album cover" if self.settings.get("music_color_source") == "Album cover" else "Custom"))
+        self.closing = False
+        self.style = ttk.Style()
+        self.apply_theme()
+        theme = THEMES[self.theme_var.get()]
+        PAPER = theme["background"]
+        PAPER_2 = theme["surface"]
+        INK = theme["text"]
+        INK_2 = theme["log_background"]
+        MUTED = theme["muted"]
+        PINK = theme["accent_soft"]
+        HOT = theme["accent"]
+        LINE = theme["border"]
+        WHITE = theme["button"]
         self.bluetooth = None
         self.music = None
         self.screen = None
         self.active_mode = None
 
-        # ====================================================
-        # HEADER
-        # ====================================================
+        # Header — intentionally spacious, like a record sleeve rather than a dashboard.
+        header = ttk.Frame(root)
+        header.pack(fill="x", padx=34, pady=(25, 10))
+        title_block = ttk.Frame(header)
+        title_block.pack(side="left")
+        ttk.Label(title_block, text="OLIVE RGB", style="Title.TLabel").pack(anchor="w")
+        ttk.Label(title_block, text=f"LIGHT IT UP  /  v{APP_VERSION}", style="Kicker.TLabel").pack(anchor="w", pady=(1, 0))
 
-        header = ttk.Frame(
-            root
-        )
+        self.status_label = ttk.Label(header, text="● DISCONNECTED", style="Status.TLabel")
+        self.status_label.pack(side="right", padx=(14, 0))
+        ttk.Button(header, text="CONNECT", command=self.connect_lamp, style="Accent.TButton").pack(side="right")
 
-        header.pack(
-            fill="x",
-            padx=20,
-            pady=15
-        )
+        # Three large mode controls. No box around them; they are the hierarchy.
+        modes = ttk.Frame(root)
+        modes.pack(fill="x", padx=34, pady=(10, 14))
+        self.music_button = ttk.Button(modes, text="MUSIC", style="Mode.TButton", command=self.toggle_music)
+        self.music_button.pack(side="left", fill="x", expand=True, padx=(0, 6))
+        self.movie_button = ttk.Button(modes, text="MOVIE", style="Mode.TButton", command=lambda: self.toggle_screen_mode("Movie"))
+        self.movie_button.pack(side="left", fill="x", expand=True, padx=6)
+        self.game_button = ttk.Button(modes, text="GAMING", style="Mode.TButton", command=lambda: self.toggle_screen_mode("Gaming"))
+        self.game_button.pack(side="left", fill="x", expand=True, padx=(6, 0))
 
-        ttk.Label(
-            header,
-            text=(
-                f"🌸 {APP_NAME} "
-                f"Command Center v{APP_VERSION}"
-            ),
-            style="Title.TLabel"
-        ).pack(
-            side="left"
-        )
+        notebook = ttk.Notebook(root)
+        notebook.pack(fill="both", expand=True, padx=34, pady=(0, 14))
+        light_tab = ttk.Frame(notebook, style="Paper.TFrame")
+        music_tab = ttk.Frame(notebook, style="Paper.TFrame")
+        screen_tab = ttk.Frame(notebook, style="Paper.TFrame")
+        system_tab = ttk.Frame(notebook, style="Paper.TFrame")
+        notebook.add(light_tab, text="LIGHT")
+        notebook.add(music_tab, text="MUSIC")
+        notebook.add(screen_tab, text="SCREEN")
+        notebook.add(system_tab, text="SYSTEM")
 
-        self.status_label = (
-            ttk.Label(
-                header,
-                text="⚪ DISCONNECTED"
-            )
-        )
-
-        self.status_label.pack(
-            side="right",
-            padx=10
-        )
-
-        ttk.Button(
-            header,
-            text="Connect Lamp",
-            command=self.connect_lamp
-        ).pack(
-            side="right"
-        )
-
-        # ====================================================
-        # MODE BUTTONS
-        # ====================================================
-
-        modes = ttk.LabelFrame(
-            root,
-            text="Reactive Modes"
-        )
-
-        modes.pack(
-            fill="x",
-            padx=20,
-            pady=(0, 10)
-        )
-
-        self.music_button = (
-            ttk.Button(
-                modes,
-                text="🎵 MUSIC",
-                style="Big.TButton",
-                command=(
-                    self.toggle_music
-                )
-            )
-        )
-
-        self.music_button.pack(
-            side="left",
-            fill="x",
-            expand=True,
-            padx=8,
-            pady=10
-        )
-
-        self.movie_button = (
-            ttk.Button(
-                modes,
-                text="🎬 MOVIE",
-                style="Big.TButton",
-                command=(
-                    lambda:
-                    self.toggle_screen_mode(
-                        "Movie"
-                    )
-                )
-            )
-        )
-
-        self.movie_button.pack(
-            side="left",
-            fill="x",
-            expand=True,
-            padx=8,
-            pady=10
-        )
-
-        self.game_button = (
-            ttk.Button(
-                modes,
-                text="🎮 GAMING",
-                style="Big.TButton",
-                command=(
-                    lambda:
-                    self.toggle_screen_mode(
-                        "Gaming"
-                    )
-                )
-            )
-        )
-
-        self.game_button.pack(
-            side="left",
-            fill="x",
-            expand=True,
-            padx=8,
-            pady=10
-        )
-
-        # ====================================================
-        # MAIN AREA
-        # ====================================================
-
-        main = ttk.Frame(
-            root
-        )
-
-        main.pack(
-            fill="both",
-            expand=True,
-            padx=20
-        )
-
-        left = ttk.Frame(
-            main
-        )
-
-        left.pack(
-            side="left",
-            fill="both",
-            expand=True,
-            padx=(0, 10)
-        )
-
-        right = ttk.Frame(
-            main
-        )
-
-        right.pack(
-            side="right",
-            fill="both",
-            expand=True,
-            padx=(10, 0)
-        )
-
-        # ====================================================
-        # SCENES
-        # ====================================================
-
-        scenes = ttk.LabelFrame(
-            left,
-            text="Static Scenes"
-        )
-
-        scenes.pack(
-            fill="x",
-            pady=5
-        )
-
+        # LIGHT tab — swatches on left, oversized live output on right.
+        light_left = ttk.Frame(light_tab, style="Paper.TFrame")
+        light_left.pack(side="left", fill="both", expand=True, padx=(24, 12), pady=24)
+        light_right = ttk.Frame(light_tab, style="Paper.TFrame")
+        light_right.pack(side="right", fill="both", expand=True, padx=(12, 24), pady=24)
+        ttk.Label(light_left, text="STATIC COLORS", style="Section.TLabel").pack(anchor="w", pady=(0, 12))
         presets = [
-            ("🩷 Pink", (255, 20, 120)),
-            ("💜 Purple", (150, 30, 255)),
-            ("🩵 Cyan", (0, 200, 255)),
-            ("❤️ Red", (255, 0, 0)),
-            ("🧡 Warm", (255, 90, 20)),
-            ("🤍 White", (255, 255, 255)),
-            ("🔥 MGK", (255, 0, 70)),
-            ("🌙 Off", (0, 0, 0))
+            ("PINK", (255, 20, 120)), ("PURPLE", (150, 30, 255)),
+            ("CYAN", (0, 200, 255)), ("RED", (255, 0, 0)),
+            ("WARM", (255, 90, 20)), ("WHITE", (255, 255, 255)),
+            ("MGK", (255, 0, 70)), ("OFF", (0, 0, 0))
         ]
+        grid = ttk.Frame(light_left, style="Paper.TFrame")
+        grid.pack(fill="x")
+        for i, (name, rgb) in enumerate(presets):
+            ttk.Button(grid, text=name, command=lambda c=rgb: self.set_manual_color(c)).grid(row=i//2, column=i%2, sticky="ew", padx=(0 if i%2==0 else 6, 6 if i%2==0 else 0), pady=5)
+        grid.columnconfigure(0, weight=1); grid.columnconfigure(1, weight=1)
+        ttk.Button(light_left, text="CUSTOM COLOR  +", command=self.choose_color, style="Accent.TButton").pack(fill="x", pady=(10, 0))
 
-        for i, (
-            name,
-            rgb
-        ) in enumerate(
-            presets
-        ):
+        ttk.Label(light_right, text="NOW GLOWING", style="Section.TLabel").pack(anchor="w", pady=(0, 12))
+        self.preview = tk.Canvas(light_right, height=260, bg=INK, highlightthickness=0)
+        self.preview.pack(fill="both", expand=True)
+        self.rgb_label = ttk.Label(light_right, text="RGB  0 / 0 / 0", style="Card.TLabel", font=("Cascadia Mono", 10, "bold"))
+        self.rgb_label.pack(anchor="e", pady=(10, 0))
 
-            ttk.Button(
-                scenes,
-                text=name,
-                command=(
-                    lambda c=rgb:
-                    self.set_manual_color(
-                        c
-                    )
-                )
-            ).grid(
-                row=i // 2,
-                column=i % 2,
-                sticky="ew",
-                padx=5,
-                pady=5
-            )
+        # MUSIC tab
+        music_controls = ttk.Frame(music_tab, style="Paper.TFrame")
+        music_controls.pack(side="left", fill="both", expand=True, padx=(24, 16), pady=16)
+        music_live = ttk.Frame(music_tab, style="Paper.TFrame")
+        music_live.pack(side="right", fill="both", expand=True, padx=(16, 24), pady=24)
+        ttk.Label(music_controls, text="MUSIC REACTIVE", style="Section.TLabel").pack(anchor="w")
+        ttk.Label(music_controls, text="Choose the feel, then tune how hard the room reacts.", style="Muted.Card.TLabel").pack(anchor="w", pady=(3, 10))
+        self.profile_var = tk.StringVar(value=self.settings.get("music_profile", "Reactive"))
+        profile_box = ttk.Combobox(music_controls, textvariable=self.profile_var, values=["Smooth", "Reactive", "Hyperpop", "MGK"], state="readonly")
+        profile_box.pack(fill="x", pady=(0, 10)); profile_box.bind("<<ComboboxSelected>>", lambda _: self.change_profile())
+        self.music_sensitivity = tk.DoubleVar(value=float(self.settings.get("music_sensitivity", 1.0)))
+        ttk.Label(music_controls, text="SENSITIVITY", style="Card.TLabel", font=("Segoe UI", 9, "bold")).pack(anchor="w")
+        ttk.Scale(music_controls, from_=0.4, to=2.5, variable=self.music_sensitivity, command=self.update_music_settings).pack(fill="x", pady=(5, 10))
+        self.music_smoothing = tk.DoubleVar(value=float(self.settings.get("music_smoothing", 1.0)))
+        ttk.Label(music_controls, text="SMOOTHING", style="Card.TLabel", font=("Segoe UI", 9, "bold")).pack(anchor="w")
+        ttk.Scale(music_controls, from_=0.5, to=1.35, variable=self.music_smoothing, command=self.update_music_settings).pack(fill="x", pady=(5, 0))
 
-        scenes.columnconfigure(
-            0,
-            weight=1
-        )
+        ttk.Label(music_controls, text="MUSIC COLORS", style="Section.TLabel").pack(anchor="w", pady=(14, 4))
+        source_box = ttk.Combobox(music_controls, textvariable=self.music_color_source,
+                                  values=["Custom", "Album cover"], state="readonly")
+        source_box.pack(fill="x", pady=(2, 5))
+        source_box.bind("<<ComboboxSelected>>", self.change_music_color_source)
+        self.music_swatches = {}
+        for key in DEFAULT_MUSIC_COLORS:
+            row = ttk.Frame(music_controls, style="Paper.TFrame")
+            row.pack(fill="x", pady=3)
+            ttk.Button(row, text=key.upper(), style="Palette.TButton", command=lambda k=key: self.choose_music_color(k)).pack(side="left", fill="x", expand=True)
+            swatch = tk.Label(row, text=self.music_colors[key], bg=self.music_colors[key], width=10, cursor="hand2", relief="flat")
+            swatch.pack(side="right", padx=(10, 0))
+            swatch.bind("<Button-1>", lambda event, k=key: self.choose_music_color(k))
+            self.music_swatches[key] = swatch
+        self.refresh_music_swatches()
 
-        scenes.columnconfigure(
-            1,
-            weight=1
-        )
+        ttk.Label(music_live, text="LIVE SIGNAL", style="Section.TLabel").pack(anchor="w", pady=(0, 10))
+        self.bass_meter = self.make_meter(music_live, "BASS")
+        self.mid_meter = self.make_meter(music_live, "MIDS")
+        self.treble_meter = self.make_meter(music_live, "TREBLE")
+        self.volume_meter = self.make_meter(music_live, "VOLUME")
+        self.analysis_label = ttk.Label(music_live, text="Mode: Static", style="Card.TLabel", font=("Segoe UI", 11, "bold"))
+        self.analysis_label.pack(anchor="w", pady=(20, 4))
+        self.beat_label = ttk.Label(music_live, text="○ BEAT", style="Beat.Card.TLabel", font=("Segoe UI Variable Display", 22, "bold"))
+        self.beat_label.pack(anchor="w")
+        self.album_status = ttk.Label(music_live, text="Custom music colors", style="Muted.Card.TLabel", wraplength=340)
+        self.album_status.pack(anchor="w", pady=(14, 6))
+        self.album_cover = ttk.Label(music_live, style="Card.TLabel")
+        self.album_cover.pack(anchor="w")
+        self.album_photo = None
 
-        ttk.Button(
-            scenes,
-            text="🎨 Custom Color",
-            command=self.choose_color
-        ).grid(
-            row=4,
-            column=0,
-            columnspan=2,
-            sticky="ew",
-            padx=5,
-            pady=8
-        )
+        # SCREEN tab
+        screen_controls = ttk.Frame(screen_tab, style="Paper.TFrame")
+        screen_controls.pack(fill="both", expand=True, padx=24, pady=24)
+        ttk.Label(screen_controls, text="SCREEN REACTIVE", style="Section.TLabel").pack(anchor="w")
+        ttk.Label(screen_controls, text="Movie and Gaming sample your display and send the color to the lamp.", style="Muted.Card.TLabel").pack(anchor="w", pady=(3, 22))
+        self.monitor_var = tk.StringVar(value=str(self.settings.get("monitor", "1")))
+        ttk.Label(screen_controls, text="MONITOR", style="Card.TLabel", font=("Segoe UI", 9, "bold")).pack(anchor="w")
+        self.monitor_box = ttk.Combobox(screen_controls, textvariable=self.monitor_var, values=self.get_monitors(), state="readonly")
+        self.monitor_box.pack(fill="x", pady=(5, 20))
+        self.screen_intensity = tk.DoubleVar(value=float(self.settings.get("screen_intensity", 1.0)))
+        ttk.Label(screen_controls, text="INTENSITY", style="Card.TLabel", font=("Segoe UI", 9, "bold")).pack(anchor="w")
+        ttk.Scale(screen_controls, from_=0.25, to=2.0, variable=self.screen_intensity, command=self.update_screen_settings).pack(fill="x", pady=(5, 20))
+        self.screen_saturation = tk.DoubleVar(value=float(self.settings.get("screen_saturation", 1.25)))
+        ttk.Label(screen_controls, text="COLOR SATURATION", style="Card.TLabel", font=("Segoe UI", 9, "bold")).pack(anchor="w")
+        ttk.Scale(screen_controls, from_=0.5, to=2.5, variable=self.screen_saturation, command=self.update_screen_settings).pack(fill="x", pady=(5, 0))
 
-        # ====================================================
-        # MUSIC SETTINGS
-        # ====================================================
+        appearance_tab = ttk.Frame(notebook, style="Paper.TFrame")
+        notebook.add(appearance_tab, text="APPEARANCE")
+        appearance = ttk.Frame(appearance_tab, style="Paper.TFrame")
+        appearance.pack(fill="both", expand=True, padx=24, pady=24)
+        ttk.Label(appearance, text="APPEARANCE / THEME", style="Section.TLabel").pack(anchor="w")
+        theme_box = ttk.Combobox(appearance, textvariable=self.theme_var, values=list(THEMES), state="readonly")
+        theme_box.pack(fill="x", pady=(16, 12))
+        theme_box.bind("<<ComboboxSelected>>", self.change_theme)
+        ttk.Label(appearance, text="Choose an interface theme. Your lighting colors stay independent.", style="Muted.Card.TLabel").pack(anchor="w")
 
-        music_settings = (
-            ttk.LabelFrame(
-                left,
-                text="Music Settings"
-            )
-        )
+        # SYSTEM tab — logs are available when wanted, not permanently screaming at you.
+        system_inner = ttk.Frame(system_tab, style="Paper.TFrame")
+        system_inner.pack(fill="both", expand=True, padx=24, pady=24)
+        ttk.Label(system_inner, text="SYSTEM LOG", style="Section.TLabel").pack(anchor="w", pady=(0, 10))
+        self.log_box = tk.Text(system_inner, height=12, state="disabled", font=("Cascadia Mono", 9), bg=INK_2, fg="#F8EEF2", insertbackground=WHITE, selectbackground=HOT, relief="flat", padx=14, pady=14, highlightthickness=0)
+        self.log_box.pack(fill="both", expand=True)
 
-        music_settings.pack(
-            fill="x",
-            pady=10
-        )
+        self.root.protocol("WM_DELETE_WINDOW", self.close)
+        self.bluetooth = BluetoothWorker(self.set_status, self.log)
+        self.music = MusicEngine(self.bluetooth.set_rgb, self.update_audio_meters, self.show_beat, self.log)
+        self.music.colors = dict(self.music_colors)
+        self.apply_theme()
+        self.screen = ScreenEngine(self.bluetooth.set_rgb, self.update_screen_preview, self.log)
+        self.artwork_worker = AlbumArtworkWorker()
+        if self.music_color_source.get() == "Album cover":
+            self.artwork_worker.set_enabled(True)
+            self.album_status.configure(text="Waiting for the playing song's artwork…")
+        self.root.after(200, self.poll_album_artwork)
+        self.log(f"{APP_NAME} v{APP_VERSION} ready")
 
-        self.profile_var = (
-            tk.StringVar(
-                value=self.settings.get("music_profile", "Reactive")
-            )
-        )
-
-        profile_box = (
-            ttk.Combobox(
-                music_settings,
-                textvariable=(
-                    self.profile_var
-                ),
-                values=[
-                    "Smooth",
-                    "Reactive",
-                    "Hyperpop",
-                    "MGK"
-                ],
-                state="readonly"
-            )
-        )
-
-        profile_box.pack(
-            fill="x",
-            padx=10,
-            pady=8
-        )
-
-        profile_box.bind(
-            "<<ComboboxSelected>>",
-            lambda _:
-            self.change_profile()
-        )
-
-        ttk.Label(
-            music_settings,
-            text="Sensitivity"
-        ).pack()
-
-        self.music_sensitivity = (
-            tk.DoubleVar(
-                value=float(self.settings.get("music_sensitivity", 1.0))
-            )
-        )
-
-        ttk.Scale(
-            music_settings,
-            from_=0.4,
-            to=2.5,
-            variable=(
-                self.music_sensitivity
-            ),
-            command=(
-                self.update_music_settings
-            )
-        ).pack(
-            fill="x",
-            padx=10
-        )
-
-        ttk.Label(
-            music_settings,
-            text="Smoothing"
-        ).pack(
-            pady=(8, 0)
-        )
-
-        self.music_smoothing = (
-            tk.DoubleVar(
-                value=float(self.settings.get("music_smoothing", 1.0))
-            )
-        )
-
-        ttk.Scale(
-            music_settings,
-            from_=0.5,
-            to=1.35,
-            variable=(
-                self.music_smoothing
-            ),
-            command=(
-                self.update_music_settings
-            )
-        ).pack(
-            fill="x",
-            padx=10,
-            pady=(0, 10)
-        )
-
-        # ====================================================
-        # SCREEN SETTINGS
-        # ====================================================
-
-        screen_settings = (
-            ttk.LabelFrame(
-                left,
-                text=(
-                    "Movie / Gaming "
-                    "Settings"
-                )
-            )
-        )
-
-        screen_settings.pack(
-            fill="x",
-            pady=10
-        )
-
-        ttk.Label(
-            screen_settings,
-            text="Monitor"
-        ).pack(
-            pady=(8, 0)
-        )
-
-        self.monitor_var = (
-            tk.StringVar(
-                value=str(self.settings.get("monitor", "1"))
-            )
-        )
-
-        monitor_values = (
-            self.get_monitors()
-        )
-
-        self.monitor_box = (
-            ttk.Combobox(
-                screen_settings,
-                textvariable=(
-                    self.monitor_var
-                ),
-                values=monitor_values,
-                state="readonly"
-            )
-        )
-
-        self.monitor_box.pack(
-            fill="x",
-            padx=10,
-            pady=5
-        )
-
-        ttk.Label(
-            screen_settings,
-            text="Intensity"
-        ).pack(
-            pady=(8, 0)
-        )
-
-        self.screen_intensity = (
-            tk.DoubleVar(
-                value=float(self.settings.get("screen_intensity", 1.0))
-            )
-        )
-
-        ttk.Scale(
-            screen_settings,
-            from_=0.25,
-            to=2.0,
-            variable=(
-                self.screen_intensity
-            ),
-            command=(
-                self.update_screen_settings
-            )
-        ).pack(
-            fill="x",
-            padx=10
-        )
-
-        ttk.Label(
-            screen_settings,
-            text="Color Saturation"
-        ).pack(
-            pady=(8, 0)
-        )
-
-        self.screen_saturation = (
-            tk.DoubleVar(
-                value=float(self.settings.get("screen_saturation", 1.25))
-            )
-        )
-
-        ttk.Scale(
-            screen_settings,
-            from_=0.5,
-            to=2.5,
-            variable=(
-                self.screen_saturation
-            ),
-            command=(
-                self.update_screen_settings
-            )
-        ).pack(
-            fill="x",
-            padx=10,
-            pady=(0, 10)
-        )
-
-        # ====================================================
-        # LIVE ANALYSIS
-        # ====================================================
-
-        analysis = ttk.LabelFrame(
-            right,
-            text="Live Analysis"
-        )
-
-        analysis.pack(
-            fill="x",
-            pady=5
-        )
-
-        self.bass_meter = (
-            self.make_meter(
-                analysis,
-                "Bass"
-            )
-        )
-
-        self.mid_meter = (
-            self.make_meter(
-                analysis,
-                "Mids"
-            )
-        )
-
-        self.treble_meter = (
-            self.make_meter(
-                analysis,
-                "Treble"
-            )
-        )
-
-        self.volume_meter = (
-            self.make_meter(
-                analysis,
-                "Volume"
-            )
-        )
-
-        self.analysis_label = (
-            ttk.Label(
-                analysis,
-                text="Mode: Static",
-                font=(
-                    "Segoe UI",
-                    11,
-                    "bold"
-                )
-            )
-        )
-
-        self.analysis_label.pack(
-            pady=8
-        )
-
-        self.beat_label = (
-            ttk.Label(
-                analysis,
-                text="○ BEAT",
-                font=(
-                    "Segoe UI",
-                    15,
-                    "bold"
-                )
-            )
-        )
-
-        self.beat_label.pack(
-            pady=8
-        )
-
-        # ====================================================
-        # OUTPUT PREVIEW
-        # ====================================================
-
-        preview_frame = (
-            ttk.LabelFrame(
-                right,
-                text="Lamp Output"
-            )
-        )
-
-        preview_frame.pack(
-            fill="x",
-            pady=10
-        )
-
-        self.preview = tk.Canvas(
-            preview_frame,
-            height=130,
-            bg="#000000",
-            highlightthickness=0
-        )
-
-        self.preview.pack(
-            fill="x",
-            padx=10,
-            pady=10
-        )
-
-        self.rgb_label = (
-            ttk.Label(
-                preview_frame,
-                text="RGB: 0, 0, 0"
-            )
-        )
-
-        self.rgb_label.pack(
-            pady=(0, 8)
-        )
-
-        # ====================================================
-        # LOG
-        # ====================================================
-
-        log_frame = ttk.LabelFrame(
-            root,
-            text="System Log"
-        )
-
-        log_frame.pack(
-            fill="both",
-            padx=20,
-            pady=15
-        )
-
-        self.log_box = tk.Text(
-            log_frame,
-            height=6,
-            state="disabled",
-            font=("Consolas", 9)
-        )
-
-        self.log_box.pack(
-            fill="both",
-            expand=True,
-            padx=5,
-            pady=5
-        )
-
-        self.root.protocol(
-            "WM_DELETE_WINDOW",
-            self.close
-        )
-
-        # Start the known-good engines only after every GUI callback
-        # target has been created. Sacred Bluetooth Worker stays intact.
-        self.bluetooth = BluetoothWorker(
-            self.set_status,
-            self.log
-        )
-
-        self.music = MusicEngine(
-            self.bluetooth.set_rgb,
-            self.update_audio_meters,
-            self.show_beat,
-            self.log
-        )
-
-        self.screen = ScreenEngine(
-            self.bluetooth.set_rgb,
-            self.update_screen_preview,
-            self.log
-        )
-
-        self.log(
-            f"{APP_NAME} v{APP_VERSION} ready"
-        )
 
     # ========================================================
     # MONITORS
     # ========================================================
+
+    def apply_theme(self):
+        theme = THEMES[self.theme_var.get()]
+        PAPER = theme["background"]
+        PAPER_2 = theme["surface"]
+        INK = theme["text"]
+        INK_2 = theme["log_background"]
+        MUTED = theme["muted"]
+        PINK = theme["accent_soft"]
+        HOT = theme["accent"]
+        LINE = theme["border"]
+        WHITE = theme["button"]
+        self.root.configure(bg=PAPER)
+        style = self.style
+        try:
+            style.theme_use("clam")
+        except Exception:
+            pass
+
+        style.configure("TFrame", background=PAPER)
+        style.configure("Paper.TFrame", background=PAPER_2)
+        style.configure("Ink.TFrame", background=INK)
+        style.configure("TLabel", background=PAPER, foreground=INK, font=("Segoe UI", 10))
+        style.configure("Card.TLabel", background=PAPER_2, foreground=INK, font=("Segoe UI", 10))
+        style.configure("Title.TLabel", background=PAPER, foreground=INK, font=("Segoe UI Variable Display", 27, "bold"))
+        style.configure("Kicker.TLabel", background=PAPER, foreground=HOT, font=("Segoe UI", 9, "bold"))
+        style.configure("Status.TLabel", background=PAPER, foreground=INK, font=("Segoe UI", 10, "bold"))
+        style.configure("Section.TLabel", background=PAPER_2, foreground=INK, font=("Segoe UI Variable Display", 15, "bold"))
+        style.configure("TButton", background=WHITE, foreground=INK, bordercolor=LINE, lightcolor=WHITE, darkcolor=WHITE, padding=(12, 9), font=("Segoe UI", 10))
+        style.map("TButton", background=[("active", theme["hover"]), ("pressed", PINK)], bordercolor=[("active", PINK)])
+        style.configure("Mode.TButton", background=INK, foreground=theme["on_accent"], bordercolor=INK, padding=(18, 14), font=("Segoe UI Variable Display", 12, "bold"))
+        style.map("Mode.TButton", background=[("active", HOT), ("pressed", theme["accent_soft"])], foreground=[("active", theme["on_accent"])])
+        style.configure("Accent.TButton", background=HOT, foreground=theme["on_accent"], bordercolor=HOT, padding=(15, 10), font=("Segoe UI", 10, "bold"))
+        style.map("Accent.TButton", background=[("active", theme["accent_soft"]), ("pressed", theme["pressed"])])
+        style.configure("TCombobox", fieldbackground=WHITE, background=WHITE, foreground=INK, arrowcolor=INK, bordercolor=LINE, padding=5)
+        style.map("TCombobox", fieldbackground=[("readonly", WHITE)], foreground=[("readonly", INK)], selectbackground=[("readonly", WHITE)], selectforeground=[("readonly", INK)])
+        style.configure("Horizontal.TScale", background=PAPER_2, troughcolor=theme["border"], bordercolor=PAPER_2, lightcolor=PAPER_2, darkcolor=PAPER_2)
+        style.configure("Horizontal.TProgressbar", troughcolor=theme["border"], background=HOT, bordercolor=PAPER_2, lightcolor=HOT, darkcolor=HOT)
+        style.configure("TNotebook", background=PAPER, borderwidth=0, tabmargins=(0, 8, 0, 0))
+        style.configure("TNotebook.Tab", background=PAPER, foreground=MUTED, borderwidth=0, padding=(22, 10), font=("Segoe UI", 10, "bold"))
+        style.map("TNotebook.Tab", background=[("selected", PAPER_2), ("active", theme["hover"])], foreground=[("selected", INK), ("active", INK)])
+
+        style.configure("Muted.Card.TLabel", background=PAPER_2, foreground=MUTED)
+        style.configure("Palette.TButton", padding=(10, 4))
+        style.configure("Beat.Card.TLabel", background=PAPER_2, foreground=HOT)
+        self.root.option_add("*TCombobox*Listbox.background", theme["button"])
+        self.root.option_add("*TCombobox*Listbox.foreground", theme["text"])
+        self.root.option_add("*TCombobox*Listbox.selectBackground", theme["accent"])
+        self.root.option_add("*TCombobox*Listbox.selectForeground", theme["on_accent"])
+        if hasattr(self, "log_box"):
+            self.log_box.configure(bg=theme["log_background"], fg=theme["log_text"], insertbackground=theme["log_text"], selectbackground=theme["accent"], selectforeground=theme["on_accent"])
+
+    def change_theme(self, _=None):
+        self.apply_theme()
+        self.save_settings()
+
+    def refresh_music_swatches(self):
+        for key, swatch in self.music_swatches.items():
+            color = self.music_colors[key]
+            r, g, b = color_rgb(color)
+            foreground = "#000000" if (r * 299 + g * 587 + b * 114) / 1000 >= 145 else "#FFFFFF"
+            swatch.configure(bg=color, fg=foreground, text=color)
+
+    def change_music_color_source(self, _=None):
+        if self.music_color_source.get() == "Album cover":
+            self.artwork_worker.set_enabled(True)
+            self.album_status.configure(text="Waiting for the playing song's artwork…")
+        else:
+            self.artwork_worker.set_enabled(False)
+            self.music_colors = dict(self.manual_music_colors)
+            self.music.colors = dict(self.music_colors)
+            self.refresh_music_swatches()
+            self.album_status.configure(text="Custom music colors")
+            self.album_cover.configure(image="")
+            self.album_photo = None
+        self.save_settings()
+
+    def poll_album_artwork(self):
+        if self.closing:
+            return
+        try:
+            kind, description, palette, data = self.artwork_worker.messages.get_nowait()
+        except queue.Empty:
+            pass
+        else:
+            if self.music_color_source.get() == "Album cover":
+                self.music_colors = dict(palette or self.manual_music_colors)
+                self.music.colors = dict(self.music_colors)
+                self.refresh_music_swatches()
+                self.album_status.configure(text=description)
+                self.album_cover.configure(image="")
+                self.album_photo = None
+                if kind == "artwork":
+                    try:
+                        from PIL import Image, ImageTk, ImageOps
+                        with Image.open(io.BytesIO(data)) as image:
+                            thumbnail = ImageOps.exif_transpose(image).convert("RGB")
+                            thumbnail.thumbnail((100, 100))
+                            self.album_photo = ImageTk.PhotoImage(thumbnail, master=self.root)
+                        self.album_cover.configure(image=self.album_photo)
+                    except Exception:
+                        pass  # Extracted palette remains usable if preview rendering fails.
+        self.root.after(200, self.poll_album_artwork)
+
+    def choose_music_color(self, key):
+        _, color = colorchooser.askcolor(color=self.music_colors[key], title=f"Music {key.title()} color", parent=self.root)
+        if color:
+            self.manual_music_colors = dict(self.music_colors, **{key: color.upper()})
+            self.music_color_source.set("Custom")
+            self.change_music_color_source()
+            self.music_colors = dict(self.manual_music_colors)
+            self.music.colors = dict(self.music_colors)
+            self.refresh_music_swatches()
+            self.save_settings()
 
     def get_monitors(self):
         try:
@@ -2011,9 +1635,9 @@ class LampGUI:
             )
 
             names = [
-                "BASS 🩷",
-                "MIDS 💜",
-                "TREBLE 🩵"
+                "BASS",
+                "MIDS",
+                "TREBLE"
             ]
 
             self.analysis_label.config(
@@ -2135,6 +1759,10 @@ class LampGUI:
 
     def save_settings(self):
         save_app_settings({
+            **self.settings,
+            "ui_theme": self.theme_var.get(),
+            "music_colors": dict(self.manual_music_colors),
+            "music_color_source": self.music_color_source.get(),
             "music_profile": self.profile_var.get(),
             "music_sensitivity": float(self.music_sensitivity.get()),
             "music_smoothing": float(self.music_smoothing.get()),
@@ -2150,6 +1778,8 @@ class LampGUI:
 
     def close(self):
 
+        self.closing = True
+        self.artwork_worker.close()
         self.save_settings()
         self.stop_modes()
 
