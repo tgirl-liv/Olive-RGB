@@ -1,5 +1,6 @@
 """Music ownership and transport bridges around the unchanged production router."""
 from .dual_adapter import DualLightingAdapter
+from .music_adjustments import adjusted_frame,validated_adjustments
 
 
 class CornerOutput:
@@ -21,6 +22,7 @@ class MusicLightingAdapter(DualLightingAdapter):
         self.music_colors = {}
         self.router = None
         self.last_frame = None
+        self.adjustments = (1., 1.)
 
     def owns(self, key):
         connected = self.connected if key == 'Corner' else self.hue_connected
@@ -36,7 +38,12 @@ class MusicLightingAdapter(DualLightingAdapter):
 
     def apply_frame(self, frame):
         if not self.music_active or self.closed:return
-        self.last_frame = frame;self.router.set_music_frame(frame)
+        self.last_frame = frame
+        self.router.set_music_frame(adjusted_frame(frame,*self.adjustments))
+
+    def set_adjustments(self, brightness, saturation):
+        # GUI-owned state: apply to the next measured frame, never replay beats.
+        self.adjustments = validated_adjustments(brightness,saturation)
 
     def music_color(self, key, rgb):
         if not self.music_active or self.last_frame is None:return

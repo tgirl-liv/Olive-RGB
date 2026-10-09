@@ -4,6 +4,7 @@ import re
 import math
 from .preferences import PROFILES
 from .spectrum_data import SpectrumMailbox
+from .music_presets import MGK_PALETTES
 
 
 def engine_factory(rgb, meter, beat, log):
@@ -20,6 +21,7 @@ def validated_palette(colors):
 
 
 def preset_colors(name):
+    if name in MGK_PALETTES:return dict(MGK_PALETTES[name])
     from .music_engine import DEFAULT_MUSIC_COLORS,MUSIC_PRESETS
     return dict(DEFAULT_MUSIC_COLORS if name=='Default' else MUSIC_PRESETS[name])
 

@@ -6,10 +6,11 @@ import os
 from pathlib import Path
 import re
 import tempfile
+from .music_presets import MGK_PALETTES
 
 PROFILES = ('Smooth', 'Reactive', 'Hyperpop', 'MGK')
 PALETTES = ('Default', 'The Weeknd — After Hours', 'The Weeknd — Dawn FM',
-            'The Weeknd — Starboy', 'Charli xcx — BRAT', 'Charli xcx — Crash')
+            'The Weeknd — Starboy', 'Charli xcx — BRAT', 'Charli xcx — Crash') + tuple(MGK_PALETTES)
 
 
 def default_path():
@@ -26,7 +27,7 @@ def defaults(mode):
                       'smoothing': 1. if mode == 'live' else .65,
                       'relationship': 'Coordinated Colors', 'separation': .25,
                       'participation': {'Corner': True, 'Hue': True}}}
-    if mode == 'live':result['music'].update(color_source='Preset',custom_theme_id=None)
+    if mode == 'live':result['music'].update(color_source='Preset',custom_theme_id=None,output_brightness=1.,output_saturation=1.)
     return result
 
 

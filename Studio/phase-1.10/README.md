@@ -143,3 +143,30 @@ The versioned library validates names, RGB colors and IDs and saves atomically
 on a background worker. Files over 128 KiB, invalid or unsupported files are
 preserved and editing is disabled with a visible status; back up and repair or
 move such a file before restarting. The library supports up to 128 custom themes.
+
+## Music-output adjustments and original static colors
+
+The LIVE Music page provides Music-output Brightness and Saturation (0–100%)
+and Reset, which restores both to 100%. They use the original Tkinter HSV math
+on a copy of each measured Music frame before coordination, then the existing
+Master/device power and brightness rules apply. Zero saturation produces gray
+at the original RGB peak; zero brightness produces black. Changes take effect
+on the next audio frame without restarting capture, and persist in Qt preferences.
+The Audio Reactor still shows unmodified measured audio. Virtual Light Preview
+shows adjusted final Corner output and the unmodified engine RGB.
+
+The Color inspector retains Studio swatches and adds the original PINK, PURPLE,
+CYAN, RED, WARM, WHITE, MGK and OFF shortcuts. They use the selected manual target,
+including Both Lights, and respect capabilities and Music ownership. To change
+a Music-owned device's manual color, opt it out or Stop Music first; these
+shortcuts never stop capture automatically.
+
+The built-in Music selector includes nine MGK-inspired palettes: Tickets to My
+Downfall, Mainstream Sellout, Hotel Diablo, Lost Americana, Lace Up, General
+Admission, Bloom, Binge and Rap Devil. These user-designed MGK-inspired
+palettes are not official album color definitions. They are immutable but can
+be duplicated into editable custom themes; switching works during Music without
+restarting capture. With Album artwork selected they remain fallback palettes.
+Preset names are their stable persisted identifiers; custom themes retain UUIDs.
+Selection persists in Qt preferences. The original MGK static color (`#FF0046`)
+and production MGK response profile are unchanged.

@@ -33,6 +33,12 @@ class Inspector(Panel):
         for col in ['#F52DCB','#AD64FA','#2857FF','#1DD9F0','#24EAB4','#FFAD21','#FF375E']:
             b=button('',lambda checked=False,col=col:c.set_hex(col));b.setAccessibleName('Color '+col);b.setToolTip(col)
             b.setFixedSize(25,25);b.setStyleSheet(f'background:{col};border-radius:12px;padding:0;');swatches.addWidget(b)
+        layout.addWidget(text('ORIGINAL STATIC COLORS','muted'))
+        originals=QGridLayout();layout.addLayout(originals);self.static_colors={}
+        for i,(name,col) in enumerate((('PINK','#FF1478'),('PURPLE','#961EFF'),('CYAN','#00C8FF'),('RED','#FF0000'),
+                                       ('WARM','#FF5A14'),('WHITE','#FFFFFF'),('MGK','#FF0046'),('OFF','#000000'))):
+            b=button(name,lambda checked=False,col=col:c.set_hex(col));b.setAccessibleName('Static '+name)
+            b.setToolTip(name+' · '+col+' · manual targets only');originals.addWidget(b,i//2,i%2);self.static_colors[name]=b
         self.advanced=button('Advanced · RGB values',lambda b:self.rgb_widget.setVisible(b),True);layout.addWidget(self.advanced)
         self.rgb_widget=QWidget();rgbrow=QHBoxLayout(self.rgb_widget);rgbrow.setContentsMargins(0,0,0,0);self.rgb=[]
         for name in ['R','G','B']:

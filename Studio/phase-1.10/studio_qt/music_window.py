@@ -60,6 +60,14 @@ class MusicLiveWindow(DualLiveWindow):
         self.smoothing=slider(100,high=140);self.smoothing.setMinimum(25)
         for name,widget in [('Sensitivity multiplier (%)',self.sensitivity),('Smoothing multiplier (%)',self.smoothing)]:
             widget.setAccessibleName(name);panel.box.addWidget(text(name));panel.box.addWidget(widget)
+        self.output_brightness=slider(100);self.output_saturation=slider(100)
+        self.adjustment_labels={}
+        for name,widget in (('Brightness',self.output_brightness),('Saturation',self.output_saturation)):
+            widget.setAccessibleName('Music-output '+name.lower())
+            label=text('Music-output '+name.lower()+': 100%');self.adjustment_labels[name]=label
+            panel.box.addWidget(label);panel.box.addWidget(widget)
+        self.adjustment_reset=button('Reset Music brightness and saturation',self.reset_music_adjustments)
+        panel.box.addWidget(self.adjustment_reset)
         self.harmony=QComboBox();self.harmony.addItems(['Coordinated Colors','Same Color']);panel.box.addWidget(text('Production color relationship'));panel.box.addWidget(self.harmony)
         self.separation=slider(25);panel.box.addWidget(text('Color separation (%)'));panel.box.addWidget(self.separation)
         for combo in (self.profile,self.palette,self.harmony):
@@ -81,6 +89,7 @@ class MusicLiveWindow(DualLiveWindow):
             for name in ('profile','palette'):assign(getattr(self,name),music[name])
             assign(self.harmony,music['relationship'])
             for name in ('sensitivity','smoothing','separation'):assign(getattr(self,name),round(music[name]*100))
+            for name in ('output_brightness','output_saturation'):assign(getattr(self,name),round(music[name]*100))
             for key,enabled in music['participation'].items():
                 assign(self.participate[key],enabled);adapter.set_participation(key,enabled)
         selected=self.preferences['music']['custom_theme_id']
@@ -100,6 +109,10 @@ class MusicLiveWindow(DualLiveWindow):
         self.smoothing.valueChanged.connect(self.update_music_response)
         self.harmony.currentTextChanged.connect(self.update_music_routing)
         self.separation.valueChanged.connect(self.update_music_routing)
+        for widget in (self.output_brightness,self.output_saturation):
+            widget.valueChanged.connect(self.update_music_adjustments)
+            widget.valueChanged.connect(self.queue_preferences)
+        self.update_music_adjustments()
         self.page_notes['Music'].setText('LIVE music uses production capture after Start Music. Saved preferences never start capture or connect devices.')
         self.page_notes['Screen'].setText('Screen capture is unavailable in Qt Studio. DEMO inspector controls simulate output only.')
         self.page_notes['Settings'].setText('Qt preferences save automatically, separately from Tkinter settings. DEMO and LIVE configurations are isolated. Connections and running modes are never restored.')
@@ -113,6 +126,7 @@ class MusicLiveWindow(DualLiveWindow):
                 'custom_theme_id':self.palette.currentData(),
                 'color_source':self.album.source.currentText() if hasattr(self,'album') else 'Preset',
                 'sensitivity':self.sensitivity.value()/100,'smoothing':self.smoothing.value()/100,
+                'output_brightness':self.output_brightness.value()/100,'output_saturation':self.output_saturation.value()/100,
                 'relationship':self.harmony.currentText(),'separation':self.separation.value()/100,
                 'participation':{k:w.isChecked() for k,w in self.participate.items()}}
 
@@ -208,6 +222,15 @@ class MusicLiveWindow(DualLiveWindow):
     def update_music_response(self,*args):
         self.runtime.set_response(self.profile.currentText(),self.sensitivity.value()/100,self.smoothing.value()/100)
 
+    def update_music_adjustments(self,*args):
+        self.c.adapter.set_adjustments(self.output_brightness.value()/100,self.output_saturation.value()/100)
+        for name,widget in (('Brightness',self.output_brightness),('Saturation',self.output_saturation)):
+            self.adjustment_labels[name].setText('Music-output '+name.lower()+f': {widget.value()}%')
+
+    def reset_music_adjustments(self):
+        assign(self.output_brightness,100);assign(self.output_saturation,100)
+        self.update_music_adjustments();self.queue_preferences()
+
     def update_music_routing(self,*args):
         adapter=self.c.adapter
         if adapter.music_active and adapter.router is not None:
@@ -256,7 +279,7 @@ class MusicLiveWindow(DualLiveWindow):
         self.music_start.setEnabled(not self._closing and not self.runtime.busy)
         self.music_stop.setEnabled(not self._closing and (active or self.runtime.busy))
         self.master.modes['Music'].setEnabled(not self._closing and not self.runtime.busy)
-        for widget in (self.profile,self.palette,self.sensitivity,self.smoothing,self.harmony,self.separation):widget.setEnabled(not self._closing)
+        for widget in (self.profile,self.palette,self.sensitivity,self.smoothing,self.harmony,self.separation,self.output_brightness,self.output_saturation,self.adjustment_reset):widget.setEnabled(not self._closing)
         selected=self.c.state.selected_channel
         if a.owns(selected):
             self.inspector.tabs.widget(0).setEnabled(False)
