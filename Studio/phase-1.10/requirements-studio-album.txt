@@ -1,0 +1,9 @@
+# Optional Album Cover Lighting integration. Install instead of the LIVE file
+# when Windows media-session artwork is wanted; normal LIVE remains independent.
+-r requirements-studio-live.txt
+Pillow>=10
+winrt-runtime>=3.2; sys_platform == "win32"
+winrt-Windows.Media.Control>=3.2; sys_platform == "win32"
+winrt-Windows.Storage.Streams>=3.2; sys_platform == "win32"
+winrt-Windows.Foundation>=3.2; sys_platform == "win32"
+winrt-Windows.Foundation.Collections>=3.2; sys_platform == "win32"

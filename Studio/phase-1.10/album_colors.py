@@ -72,6 +72,9 @@ class AlbumArtworkWorker:
         else:
             self.enabled.clear()
 
+    def _describe(self, session, props):
+        return " — ".join(v for v in (props.title, props.artist) if v) or "Current media"
+
     def _run(self):
         asyncio.run(self._watch())
 
@@ -129,7 +132,7 @@ class AlbumArtworkWorker:
                             await asyncio.sleep(2)
                             continue
                         palette = palette_from_artwork(data)
-                        description = " — ".join(v for v in (props.title, props.artist) if v) or "Current media"
+                        description = self._describe(session, props)
                         message = ("artwork", description, palette, data)
                         if self.enabled.is_set() and not self.closed.is_set() and generation == self.generation:
                             self._publish(message)

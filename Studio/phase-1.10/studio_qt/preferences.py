@@ -17,7 +17,7 @@ def default_path():
 
 
 def defaults(mode):
-    return {'master': {'power': True, 'brightness': .8},
+    result = {'master': {'power': True, 'brightness': .8},
             'devices': {key: {'power': True, 'brightness': .8, 'color': color,
                              'follow': key != 'Hue' or mode == 'demo'}
                         for key, color in (('Corner', '#F32E83'), ('Hue', '#7927DB'))},
@@ -26,6 +26,8 @@ def defaults(mode):
                       'smoothing': 1. if mode == 'live' else .65,
                       'relationship': 'Coordinated Colors', 'separation': .25,
                       'participation': {'Corner': True, 'Hue': True}}}
+    if mode == 'live':result['music']['color_source']='Preset'
+    return result
 
 
 def validate(data, mode):
@@ -43,6 +45,7 @@ def validate(data, mode):
         elif key == 'color':valid = isinstance(supplied, str) and re.fullmatch(r'#[0-9a-fA-F]{6}', supplied)
         elif key == 'profile':valid = supplied in PROFILES
         elif key == 'palette':valid = supplied in PALETTES
+        elif key == 'color_source':valid = supplied in ('Preset', 'Album artwork')
         elif key == 'relationship':valid = supplied in ('Coordinated Colors', 'Same Color') + (('Independent Devices',) if mode == 'demo' else ())
         else:valid = supplied == template
         if not valid:raise ValueError('Invalid '+key)

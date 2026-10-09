@@ -42,15 +42,22 @@ class MusicLightingAdapter(DualLightingAdapter):
         if not self.music_active or self.last_frame is None:return
         self.music_colors[key] = tuple(rgb)
         if not self.owns(key):return
+        if key == 'Corner':
+            self.session.color(self.corner_music_rgb(rgb));return
         channel = self.state.channels[key]
         scale = channel.brightness * (self.state.master_brightness if channel.follow else 1.)
         on = channel.power and (self.state.master_power or not channel.follow)
-        if key == 'Corner':self.session.color(tuple(round(c*scale) for c in rgb) if on else (0,0,0))
-        else:
-            intensity = max(rgb)/255 * scale
-            values = dict(power=bool(on and intensity>0), brightness=max(1,min(254,round(intensity*254))))
-            if self.hue_caps.get('color'):values['color'] = tuple(rgb)
-            self.hue.update(values)
+        intensity = max(rgb)/255 * scale
+        values = dict(power=bool(on and intensity>0), brightness=max(1,min(254,round(intensity*254))))
+        if self.hue_caps.get('color'):values['color'] = tuple(rgb)
+        self.hue.update(values)
+
+    def corner_music_rgb(self, rgb):
+        """Exact Corner output calculation shared by transport and read-only preview."""
+        channel=self.state.channels['Corner']
+        scale=channel.brightness*(self.state.master_brightness if channel.follow else 1.)
+        on=channel.power and (self.state.master_power or not channel.follow)
+        return tuple(round(c*scale) for c in rgb) if on else (0,0,0)
 
     def _queue(self):
         if self.owns('Corner'):

@@ -88,3 +88,37 @@ four profiles. Live GUI and lamp testing still required for this fix.
 
 ## v1.4.2 LEDBLE support
 See LEDBLE_UPDATE.md for setup, changes, validation and physical test steps.
+
+
+## Qt Studio Album Cover Lighting
+
+The LIVE Music page has a separate Album Cover Lighting source selector.
+Album artwork supplies bass, mids, treble and beat LIGHT colors; it does not
+change the Studio UI theme. Start Music explicitly to apply the palette through
+the existing participation and device coordination controls. Master/local power
+and brightness remain effective; stopping Music restores manual ownership.
+
+The read-only Virtual Light Preview shows the calculated final Corner Lamp Music
+RGB/hex and the engine RGB before device brightness/power. It uses the same
+calculation as the Corner transport, including local settings and Follow Master.
+It works with no devices connected, reflects measured beat effects and engine
+smoothing, and clears on stale audio or Stop. It does not send commands, create
+connections, or report hardware feedback. The existing Hue coordination is
+unchanged; this preview represents the Corner output.
+
+Windows players must expose a playing media session and thumbnail. Missing
+artwork, paused playback or unavailable optional dependencies use the selected
+production preset. The source preference is saved only in Qt preferences;
+launching never starts audio capture or connects devices. DEMO is unchanged.
+
+Optional installation, from the repository root in PowerShell:
+
+```powershell
+python -m pip install -r .\Studio\phase-1.10\requirements-studio-album.txt
+python .\Studio\phase-1.10\studio_qt_preview.py
+```
+
+Normal LIVE installation still uses `requirements-studio-live.txt` and does not
+require Pillow or WinRT. Windows media support needs Windows 10 1809 or later
+and compatible WinRT wheels for your Python version/architecture. Non-Windows
+LIVE uses preset fallback. Player status shows the Windows source application ID.

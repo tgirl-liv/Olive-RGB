@@ -9,10 +9,11 @@ from .music_runtime import MusicRuntime
 from .widgets.common import Panel,button,text,slider,assign
 from .preferences import PROFILES,PALETTES
 from .widgets.live_inspector import LiveMusicInspector,replace_tab
+from .widgets.album_lighting import AlbumLightingPanel
 
 
 class MusicLiveWindow(DualLiveWindow):
-    def __init__(self, workspace_path=None, worker_factory=None, hue_factory=None, hue_identity=None, engine_factory=None,preferences_path=None):
+    def __init__(self, workspace_path=None, worker_factory=None, hue_factory=None, hue_identity=None, engine_factory=None,preferences_path=None,album_worker_factory=None):
         adapter=MusicLightingAdapter(worker_factory=worker_factory,hue_factory=hue_factory,hue_identity=hue_identity)
         super().__init__(workspace_path=workspace_path,adapter=adapter,preferences_path=preferences_path)
         self.runtime=MusicRuntime(engine_factory)
@@ -60,6 +61,9 @@ class MusicLiveWindow(DualLiveWindow):
             for name in ('sensitivity','smoothing','separation'):assign(getattr(self,name),round(music[name]*100))
             for key,enabled in music['participation'].items():
                 assign(self.participate[key],enabled);adapter.set_participation(key,enabled)
+        self.album=AlbumLightingPanel(self.runtime,self.palette,self.preferences['music']['color_source'],album_worker_factory)
+        self.pages.widget(1).widget().layout().insertWidget(2,self.album)
+        self.album.source.currentTextChanged.connect(self.queue_preferences)
         for widget in (self.profile,self.palette,self.harmony):widget.currentTextChanged.connect(self.queue_preferences)
         for widget in (self.sensitivity,self.smoothing,self.separation):widget.valueChanged.connect(self.queue_preferences)
         for widget in self.participate.values():widget.toggled.connect(self.queue_preferences)
@@ -73,13 +77,15 @@ class MusicLiveWindow(DualLiveWindow):
     def music_preferences(self):
         if not hasattr(self,'participate'):return super().music_preferences()
         return {'profile':self.profile.currentText(),'palette':self.palette.currentText(),
+                'color_source':self.album.source.currentText() if hasattr(self,'album') else 'Preset',
                 'sensitivity':self.sensitivity.value()/100,'smoothing':self.smoothing.value()/100,
                 'relationship':self.harmony.currentText(),'separation':self.separation.value()/100,
                 'participation':{k:w.isChecked() for k,w in self.participate.items()}}
 
     def start_music(self):
         if self._closing or self.runtime.busy:return
-        if self.runtime.start(self.profile.currentText(),self.sensitivity.value()/100,self.smoothing.value()/100,self.palette.currentText()):
+        colors={'colors':self.album.current_palette} if self.album.source.currentText()=='Album artwork' else {}
+        if self.runtime.start(self.profile.currentText(),self.sensitivity.value()/100,self.smoothing.value()/100,self.palette.currentText(),**colors):
             self.music_timer.start()
             self.c.adapter.start_music(self.harmony.currentText(),self.separation.value()/100);self.c.state.mode='Music';self.c.changed.emit()
         self.live_controls()
@@ -121,6 +127,15 @@ class MusicLiveWindow(DualLiveWindow):
         super().live_controls()
         if not hasattr(self,'runtime'):return
         a=self.c.adapter;active=a.music_active
+        if hasattr(self,'album'):
+            frame=a.last_frame
+            if active and frame is not None and 0<=time.monotonic()-frame.timestamp<=1:
+                rgb=a.music_colors.get('Corner')
+                if rgb is not None:
+                    status='Read-only · '+('connected' if a.connected else 'disconnected; no light required')
+                    if not a.participation['Corner']:status+=' · Music participation off; calculated only'
+                    self.album.update_light_preview(a.corner_music_rgb(rgb),frame.rgb,status)
+            else:self.album.update_light_preview(None,None,'Waiting for fresh Music data.' if active else 'Start Music for measured output.')
         self.music_start.setEnabled(not self._closing and not self.runtime.busy)
         self.music_stop.setEnabled(not self._closing and (active or self.runtime.busy))
         self.master.modes['Music'].setEnabled(not self._closing and not self.runtime.busy)
@@ -136,6 +151,7 @@ class MusicLiveWindow(DualLiveWindow):
     def tick(self):self.timer.stop()  # LIVE never invokes the synthetic animation engine.
 
     def closeEvent(self,event):
+        if hasattr(self,'album'):self.album.shutdown()
         if hasattr(self,'runtime'):
             self.reactor.reset_live()
             self.runtime.stop();self.c.adapter.music_active=False
