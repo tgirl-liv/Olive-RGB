@@ -33,7 +33,7 @@ class MusicLiveWindow(DualLiveWindow):
         panel=Panel('LIVE MUSIC')
         note=text('Captures the Windows default output. Change output in Windows; the existing engine follows it. Stop / Esc releases music ownership.','muted');note.setWordWrap(True);panel.box.addWidget(note)
         self.profile=QComboBox();self.profile.addItems(PROFILES);self.profile.setCurrentText('Reactive');panel.box.addWidget(text('Production response profile'));panel.box.addWidget(self.profile)
-        self.palette=QComboBox();self.palette.addItems(PALETTES);panel.box.addWidget(text('Production palette'));panel.box.addWidget(self.palette)
+        self.palette=QComboBox();self.palette.addItems(PALETTES);panel.box.addWidget(text('Production palette (Album artwork fallback)'));panel.box.addWidget(self.palette)
         self.sensitivity=slider(100,high=300);self.sensitivity.setMinimum(25)
         self.smoothing=slider(100,high=140);self.smoothing.setMinimum(25)
         for name,widget in [('Sensitivity multiplier (%)',self.sensitivity),('Smoothing multiplier (%)',self.smoothing)]:
@@ -67,6 +67,11 @@ class MusicLiveWindow(DualLiveWindow):
         for widget in (self.profile,self.palette,self.harmony):widget.currentTextChanged.connect(self.queue_preferences)
         for widget in (self.sensitivity,self.smoothing,self.separation):widget.valueChanged.connect(self.queue_preferences)
         for widget in self.participate.values():widget.toggled.connect(self.queue_preferences)
+        self.profile.currentTextChanged.connect(self.update_music_response)
+        self.sensitivity.valueChanged.connect(self.update_music_response)
+        self.smoothing.valueChanged.connect(self.update_music_response)
+        self.harmony.currentTextChanged.connect(self.update_music_routing)
+        self.separation.valueChanged.connect(self.update_music_routing)
         self.page_notes['Music'].setText('LIVE music uses production capture after Start Music. Saved preferences never start capture or connect devices.')
         self.page_notes['Screen'].setText('Screen capture is unavailable in Qt Studio. DEMO inspector controls simulate output only.')
         self.page_notes['Settings'].setText('Qt preferences save automatically, separately from Tkinter settings. DEMO and LIVE configurations are isolated. Connections and running modes are never restored.')
@@ -96,6 +101,14 @@ class MusicLiveWindow(DualLiveWindow):
         self.reactor.reset_live()
         self.music_status.setText('Stopping audio…' if self.runtime.busy else 'Audio stopped · manual control restored')
         self.live_controls()
+
+    def update_music_response(self,*args):
+        self.runtime.set_response(self.profile.currentText(),self.sensitivity.value()/100,self.smoothing.value()/100)
+
+    def update_music_routing(self,*args):
+        adapter=self.c.adapter
+        if adapter.music_active and adapter.router is not None:
+            adapter.router.configure_music(self.harmony.currentText(),self.separation.value()/100)
 
     def participation(self,key,enabled):self.c.adapter.set_participation(key,enabled);self.live_controls()
 
@@ -139,7 +152,7 @@ class MusicLiveWindow(DualLiveWindow):
         self.music_start.setEnabled(not self._closing and not self.runtime.busy)
         self.music_stop.setEnabled(not self._closing and (active or self.runtime.busy))
         self.master.modes['Music'].setEnabled(not self._closing and not self.runtime.busy)
-        for widget in (self.profile,self.palette,self.sensitivity,self.smoothing,self.harmony,self.separation):widget.setEnabled(not self.runtime.busy and not self._closing)
+        for widget in (self.profile,self.palette,self.sensitivity,self.smoothing,self.harmony,self.separation):widget.setEnabled(not self._closing)
         selected=self.c.state.selected_channel
         if a.owns(selected):
             self.inspector.tabs.widget(0).setEnabled(False)

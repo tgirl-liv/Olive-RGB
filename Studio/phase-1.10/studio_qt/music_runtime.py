@@ -1,6 +1,8 @@
 """One production capture engine; bounded latest-frame mailbox, no Qt calls."""
 import threading
 import re
+import math
+from .preferences import PROFILES
 from .spectrum_data import SpectrumMailbox
 
 
@@ -22,6 +24,13 @@ def preset_colors(name):
     return dict(DEFAULT_MUSIC_COLORS if name=='Default' else MUSIC_PRESETS[name])
 
 
+def validated_response(profile,sensitivity,smoothing):
+    if profile not in PROFILES or any(type(value) not in (int,float) or not math.isfinite(value) or not low<=value<=high
+        for value,low,high in ((sensitivity,.25,3.),(smoothing,.25,1.4))):
+        raise ValueError('Invalid Music response controls')
+    return profile,float(sensitivity),float(smoothing)
+
+
 class MusicRuntime:
     def __init__(self, factory=None):
         self.factory = factory or engine_factory
@@ -33,7 +42,7 @@ class MusicRuntime:
         self.message = 'Stopped'
         self.error = ''
         self.spectrum=SpectrumMailbox()
-        self._palette=None
+        self._palette=None;self._response=None;self._applied_response=None
 
     @property
     def busy(self):return self.thread is not None and self.thread.is_alive()
@@ -41,7 +50,9 @@ class MusicRuntime:
     def start(self, profile='Reactive', sensitivity=1., smoothing=1., palette='Default', colors=None):
         with self.lock:
             if self.busy:return False
+            response=validated_response(profile,sensitivity,smoothing)
             self._palette=validated_palette(colors if colors is not None else preset_colors(palette))
+            self._response=response;self._applied_response=None
             self.generation += 1;generation = self.generation
             self.spectrum.reset(generation)
             self.wanted = True;self.frame = None;self.error = '';self.message = 'Opening default output loopback…'
@@ -58,14 +69,21 @@ class MusicRuntime:
             with self.lock:
                 accepted=self.wanted and generation == self.generation
                 if accepted:self.frame = value
+                response=self._response if accepted and self._response!=self._applied_response else None
+                if response is not None:self._applied_response=response
             if accepted and hasattr(engine,'publish_spectrum'):engine.publish_spectrum(value,self.spectrum,generation)
+            # This callback runs on the capture thread, after the current FFT and
+            # lighting calculation. Profile resets never race capture from Qt.
+            if response is not None:self._apply_response(engine,response)
         try:
             engine = self.factory(lambda *a:None,lambda *a:None,lambda:None,log)
-            engine.set_profile(profile);engine.user_sensitivity = sensitivity;engine.user_smoothing = smoothing
             engine.analysis_callback = frame
             with self.lock:
                 self.engine = engine
                 engine.colors=dict(self._palette)
+                engine.set_profile(self._response[0])
+                engine.user_sensitivity,engine.user_smoothing=self._response[1:]
+                self._applied_response=self._response
                 if not self.wanted:return
                 engine.start()
             # Capture owns its original thread/context manager; joins never run in Qt.
@@ -73,6 +91,16 @@ class MusicRuntime:
         except Exception as error:log(f'Audio error: {type(error).__name__}: {error}')
         finally:
             with self.lock:self.wanted = False;self.engine = None
+
+    @staticmethod
+    def _apply_response(engine,response):
+        profile,sensitivity,smoothing=response
+        if engine.profile_name!=profile:engine.set_profile(profile)
+        engine.user_sensitivity=sensitivity;engine.user_smoothing=smoothing
+
+    def set_response(self,profile,sensitivity,smoothing):
+        response=validated_response(profile,sensitivity,smoothing)
+        with self.lock:self._response=response  # Latest-only, no audio/Qt work here.
 
     def set_palette(self, colors):
         # Validate before locking; replace complete dictionaries, never mutate a

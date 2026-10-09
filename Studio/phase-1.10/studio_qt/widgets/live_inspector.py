@@ -77,7 +77,7 @@ class LiveMusicInspector(QWidget):
         layout = QVBoxLayout(self);layout.addWidget(text('LIVE MUSIC ROUTING', 'heading'))
         self.participation = QCheckBox();layout.addWidget(self.participation)
         self.participation.checkStateChanged.connect(lambda state:self.set_participation(state==Qt.CheckState.Checked))
-        note = text('Participation applies to the selected device. Coordination is shared by all participating devices; change it before starting Music.', 'muted')
+        note = text('Participation applies to the selected device. Coordination is shared by all participating devices; change it while Music runs.', 'muted')
         note.setWordWrap(True);layout.addWidget(note)
         self.relationship = QComboBox();self.relationship.addItems([window.harmony.itemText(i) for i in range(window.harmony.count())])
         self.relationship.currentTextChanged.connect(window.harmony.setCurrentText)

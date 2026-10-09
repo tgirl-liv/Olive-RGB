@@ -116,7 +116,7 @@ class LiveInspectorTests(unittest.TestCase):
         music.start.click();self.f.wait(lambda:w.c.adapter.last_frame is not None)
         self.assertEqual(len(self.f.engines),1);self.assertTrue(w.c.adapter.owns('Hue'))
         self.assertFalse(w.inspector.tabs.widget(0).isEnabled())
-        self.assertTrue(music.participation.isEnabled());self.assertFalse(music.relationship.isEnabled());self.assertFalse(music.separation.isEnabled())
+        self.assertTrue(music.participation.isEnabled());self.assertTrue(music.relationship.isEnabled());self.assertTrue(music.separation.isEnabled())
         self.assertFalse(music.start.isEnabled());self.assertTrue(music.stop.isEnabled())
         self.assertIn('Music owns Hue',music.status.text())
         music.participation.setChecked(False)
