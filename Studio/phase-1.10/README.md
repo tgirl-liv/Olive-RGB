@@ -122,3 +122,24 @@ Normal LIVE installation still uses `requirements-studio-live.txt` and does not
 require Pillow or WinRT. Windows media support needs Windows 10 1809 or later
 and compatible WinRT wheels for your Python version/architecture. Non-Windows
 LIVE uses preset fallback. Player status shows the Windows source application ID.
+
+## Custom Music themes
+
+The LIVE Music palette selector includes built-in presets and saved custom themes.
+New, Edit, Duplicate, Rename and Delete manage named Bass, Mids, Treble and Beat
+colors. Built-ins are immutable but can be duplicated. The editor supports color
+pickers, hex and RGB inputs; its swatches show the draft while Music is stopped.
+Save keeps the current selection; Save & Select selects only after a successful
+save. Editing the selected theme updates running Music without restarting capture.
+The existing Virtual Light Preview shows actual Music output without connected lights.
+
+Themes are stored in `custom-music-themes-v1.json` beside Qt preferences, outside
+the repository. Stable IDs preserve selection across renames and restarts; the
+built-in preset remains the fallback when a theme is missing or deleted. Album
+artwork stays a separate source and uses the selected palette only as fallback.
+Restoring preferences never starts Music or connects devices.
+
+The versioned library validates names, RGB colors and IDs and saves atomically
+on a background worker. Files over 128 KiB, invalid or unsupported files are
+preserved and editing is disabled with a visible status; back up and repair or
+move such a file before restarting. The library supports up to 128 custom themes.

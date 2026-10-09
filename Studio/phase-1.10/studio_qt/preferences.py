@@ -26,7 +26,7 @@ def defaults(mode):
                       'smoothing': 1. if mode == 'live' else .65,
                       'relationship': 'Coordinated Colors', 'separation': .25,
                       'participation': {'Corner': True, 'Hue': True}}}
-    if mode == 'live':result['music']['color_source']='Preset'
+    if mode == 'live':result['music'].update(color_source='Preset',custom_theme_id=None)
     return result
 
 
@@ -46,6 +46,7 @@ def validate(data, mode):
         elif key == 'profile':valid = supplied in PROFILES
         elif key == 'palette':valid = supplied in PALETTES
         elif key == 'color_source':valid = supplied in ('Preset', 'Album artwork')
+        elif key == 'custom_theme_id':valid = supplied is None or (isinstance(supplied,str) and re.fullmatch(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}',supplied))
         elif key == 'relationship':valid = supplied in ('Coordinated Colors', 'Same Color') + (('Independent Devices',) if mode == 'demo' else ())
         else:valid = supplied == template
         if not valid:raise ValueError('Invalid '+key)

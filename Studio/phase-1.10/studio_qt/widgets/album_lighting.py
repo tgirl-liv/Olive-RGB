@@ -17,12 +17,13 @@ class ArtworkSession:
 
 
 class AlbumLightingPanel(Panel):
-    def __init__(self,runtime,preset,source='Preset',worker_factory=None):
+    def __init__(self,runtime,preset,source='Preset',worker_factory=None,palette_resolver=None):
         super().__init__('ALBUM COVER LIGHTING')
         self.runtime=runtime;self.preset=preset;self.closed=False
         self.session=ArtworkSession();self.destroyed.connect(self.session.close)
         self.worker_factory=worker_factory;self.artwork_active=False
-        self.current_palette=preset_colors(preset.currentText())
+        self.resolve_palette=palette_resolver or (lambda:preset_colors(preset.currentText()))
+        self.current_palette=self.resolve_palette()
         note=text('Changes Music LIGHT colors only. Start Music to apply through existing device participation; Master power/brightness still apply.','muted')
         note.setWordWrap(True);self.box.addWidget(note)
         self.source=QComboBox();self.source.addItems(['Preset','Album artwork'])
@@ -78,7 +79,7 @@ class AlbumLightingPanel(Panel):
 
     def fallback(self,description):
         self.artwork_active=False
-        self.apply_palette(preset_colors(self.preset.currentText()))
+        self.apply_palette(self.resolve_palette())
         self.preview.clear();self.preview.setText('No artwork')
         self.status.setText(description+'\nFallback: '+self.preset.currentText())
 
