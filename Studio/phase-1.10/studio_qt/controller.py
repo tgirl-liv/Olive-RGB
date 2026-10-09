@@ -1,5 +1,6 @@
 """Qt signals around the unchanged, framework-neutral mock state model."""
 import time
+import colorsys
 from PySide6.QtCore import QObject, Signal
 from PySide6.QtGui import QColor
 from studio_ui.state import StudioState
@@ -15,6 +16,8 @@ class StudioController(QObject):
         self.state = state or StudioState()
         self.adapter = adapter or MockLightingAdapter(self.state, self)
         self.display_colors = {k:v.color for k,v in self.state.channels.items()}
+        self.manual_target = None  # LIVE-only view selection; never persisted as device state.
+        self.manual_feedback = ''
         self.transition = None
         self.transition_progress = 1.
 
@@ -31,7 +34,51 @@ class StudioController(QObject):
         self.state.navigate(page); self.changed.emit()
 
     def select_channel(self, channel):
+        self.manual_target = None;self.manual_feedback = ''
         self.state.select_channel(channel); self.changed.emit()
+
+    def select_target(self, target):
+        if target == 'Both' and getattr(self.adapter,'live',False):
+            self.manual_target = 'Both';self.manual_feedback = '';self.changed.emit()
+        else:self.select_channel(target)
+
+    def target_devices(self):
+        return ('Corner','Hue') if self.manual_target == 'Both' else (self.state.selected_channel,)
+
+    def target_reason(self, key, field):
+        a=self.adapter
+        if a.closed:return 'shutting down'
+        connected=a.connected if key=='Corner' else getattr(a,'hue_connected',False)
+        if not connected:return 'disconnected'
+        capability='color' if field=='color' else field
+        supported=(field!='power' or a.software_power) if key=='Corner' else getattr(a,'hue_caps',{}).get(capability,False)
+        if not supported:return capability+' unsupported'
+        if field=='color' and hasattr(a,'owns') and a.owns(key):return 'Music owns color'
+        return ''
+
+    def manual_reference(self):
+        return next((key for key in self.target_devices() if not self.target_reason(key,'color')),self.target_devices()[0]) if getattr(self.adapter,'live',False) else self.state.selected_channel
+
+    def manual_hsv(self):
+        color=self.state.channels[self.manual_reference()].color
+        return colorsys.rgb_to_hsv(*(int(color[i:i+2],16)/255 for i in (1,3,5)))
+
+    def apply_manual(self, field, value):
+        reasons=[]
+        for key in self.target_devices():
+            reason=self.target_reason(key,field)
+            if reason:reasons.append(key+': '+reason);continue
+            method={'color':self.adapter.set_rgb,'power':self.adapter.set_power,'brightness':self.adapter.set_brightness}[field]
+            method(key,value)
+            setattr(self.state.channels[key],'color' if field=='color' else field,value)
+            reasons.append(key+': '+field+' updated')
+        self.manual_feedback=' · '.join(reasons)
+        if field=='color':self._manual_color()
+        else:self.changed.emit()
+
+    def manual_channel(self, name, value):
+        if getattr(self.adapter,'live',False):self.apply_manual(name,value)
+        else:self.channel(self.state.selected_channel,name,value)
 
     def channel(self, key, name, value):
         if name=='follow' and not value and self.transition is not None:
@@ -62,7 +109,11 @@ class StudioController(QObject):
         self.state.set_transition(seconds, curve); self.changed.emit()
 
     def set_hex(self, value):
-        self.adapter.set_rgb(self.state.selected_channel,value);self.state.set_hex(value);self._manual_color()
+        if getattr(self.adapter,'live',False):
+            candidate=StudioState();candidate.set_hex(value)
+            self.apply_manual('color',candidate.channels[candidate.selected_channel].color)
+        else:
+            self.adapter.set_rgb(self.state.selected_channel,value);self.state.set_hex(value);self._manual_color()
 
     def set_hsv(self, h, s, v):
         candidate=StudioState();candidate.set_hsv(h,s,v)

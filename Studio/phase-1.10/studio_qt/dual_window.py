@@ -64,11 +64,9 @@ class DualLiveWindow(LiveStudioWindow):
             row.level.setToolTip('Hue brightness capability verified' if hue and a.hue_caps.get('brightness') else 'Hue brightness unavailable until the connected bulb confirms support')
         selected_hue = self.c.state.selected_channel == 'Hue'
         self.inspector.status.setText('LIVE · '+a.status_for(self.c.state.selected_channel))
-        # Mock music/scene settings remain visible as disabled context in LIVE.
-        self.inspector.tabs.setEnabled(True)
-        self.inspector.tabs.setTabEnabled(1, False)
-        self.inspector.tabs.setTabToolTip(1, 'DEMO-only inspector; use the LIVE Music page')
-        self.inspector.tabs.setTabEnabled(2, False)
+        self.inspector.tabs.setEnabled(not self._closing)
+        self.inspector.tabs.setTabEnabled(1, hasattr(self.inspector,'live_music'))
+        self.inspector.tabs.setTabEnabled(2, True)
         color_enabled = hue and a.hue_caps.get('color', False) if selected_hue else corner
         self.inspector.tabs.widget(0).setEnabled(color_enabled)
         self.inspector.tabs.setTabToolTip(0, 'Requested RGB; not a bulb color readback' if color_enabled else 'Connect a device with a verified color capability')
@@ -83,6 +81,8 @@ class DualLiveWindow(LiveStudioWindow):
             power = ('on' if observed['power'] else 'off') if 'power' in observed else 'unknown'
             brightness = str(observed.get('brightness', 'unknown'))
             self.hue_note.setText(f'Capabilities: {supported}.\nRead on connect: power {power}, brightness {brightness}/254. RGB is requested, not read back.')
+        self.refresh_manual_target()
+        self.inspector.live_setup.refresh()
         self.update_inspector_links()
         for i in (0,1,2):
             if self.inspector.tabs.isTabEnabled(i):

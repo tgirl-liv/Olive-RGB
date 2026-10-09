@@ -10,14 +10,14 @@ class Inspector(Panel):
         super().__init__('DEVICE INSPECTOR');self.c=c
         self.device=QComboBox();self.device.setAccessibleName('Inspector device')
         for key,channel in c.state.channels.items():self.device.addItem(channel.name,key)
-        self.device.currentIndexChanged.connect(lambda i:c.select_channel(self.device.itemData(i)))
+        self.device.currentIndexChanged.connect(lambda i:c.select_target(self.device.itemData(i)))
         self.box.addWidget(self.device)
         self.statuses={};self.device_name=text('Philips Hue','heading');self.box.addWidget(self.device_name)
         self.status=text('DEMO · awaiting mock status','demo');self.box.addWidget(self.status)
         self.tabs=QTabWidget();self.tabs.setSizePolicy(QSizePolicy.Policy.Preferred,QSizePolicy.Policy.Maximum);self.tabs.tabBar().setExpanding(True);self.box.addWidget(self.tabs)
         color=QWidget();layout=QVBoxLayout(color);layout.setContentsMargins(2,14,2,12);layout.setSpacing(10)
         layout.addWidget(text('COLOR LAB','heading'));self.wheel=ColorWheel();self.wheel.setFixedHeight(204);layout.addWidget(self.wheel)
-        self.wheel.hueChanged.connect(lambda h:c.set_hsv(h,*c.state.get_hsv()[1:]))
+        self.wheel.hueChanged.connect(lambda h:c.set_hsv(h,*c.manual_hsv()[1:]))
         layout.addWidget(text('HSV · COLOR BALANCE','muted'))
         grid=QGridLayout();grid.setVerticalSpacing(8);layout.addLayout(grid);self.hsv=[]
         for i,(name,maximum) in enumerate([('Hue',359),('Saturation',100),('Value',100)]):
@@ -55,9 +55,9 @@ class Inspector(Panel):
         self.tabs.currentChanged.connect(lambda i:self.select_tab(i))
         self.box.addWidget(text('DEVICE CONTROLS','heading'))
         row=QHBoxLayout();self.box.addLayout(row)
-        self.power=QCheckBox('Power');self.power.toggled.connect(lambda b:c.channel(c.state.selected_channel,'power',b));row.addWidget(self.power)
+        self.power=QCheckBox('Power');self.power.toggled.connect(lambda b:c.manual_channel('power',b));row.addWidget(self.power)
         self.follow=QCheckBox('Follow Master');self.follow.toggled.connect(lambda b:c.channel(c.state.selected_channel,'follow',b));row.addWidget(self.follow)
-        self.box.addWidget(text('Local brightness','muted'));self.brightness=slider(80,lambda n:c.channel(c.state.selected_channel,'brightness',n/100));self.brightness.setAccessibleName('Selected device local brightness');self.box.addWidget(self.brightness)
+        self.box.addWidget(text('Local brightness','muted'));self.brightness=slider(80,lambda n:c.manual_channel('brightness',n/100));self.brightness.setAccessibleName('Selected device local brightness');self.box.addWidget(self.brightness)
         self.box.addStretch();c.changed.connect(self.sync);self.sync()
     @Slot(object)
     def receive_status(self,status):
@@ -73,21 +73,22 @@ class Inspector(Panel):
         else:self.status.setText('DEMO · '+('connected (simulated)' if status and status.connected else 'offline (simulated)'))
     def select_tab(self,i):self.c.state.select_inspector(['Color','Music','Setup'][i]);self.c.changed.emit()
     def edit_hsv(self,i,n):
-        values=list(self.c.state.get_hsv());values[i]=n/(360 if i==0 else 100);self.c.set_hsv(*values)
+        values=list(self.c.manual_hsv());values[i]=n/(360 if i==0 else 100);self.c.set_hsv(*values)
     def edit_hex(self):
         try:self.c.set_hex(self.hex.text());self.error.setText('');self.error.hide()
         except ValueError:self.error.setText('Use six hexadecimal digits, e.g. #A855FF.');self.error.show()
     def edit_rgb(self):self.c.set_hex(QColor(*(s.value() for s in self.rgb)).name())
     def sync(self):
         s=self.c.state
-        block=QSignalBlocker(self.device);self.device.setCurrentIndex(self.device.findData(s.selected_channel));del block
-        self.device_name.setText(s.channels[s.selected_channel].name);self.refresh_status()
+        block=QSignalBlocker(self.device);self.device.setCurrentIndex(self.device.findData(self.c.manual_target or s.selected_channel));del block
+        self.device_name.setText('Both Lights' if self.c.manual_target=='Both' else s.channels[s.selected_channel].name);self.refresh_status()
         block=QSignalBlocker(self.tabs);self.tabs.setCurrentIndex(['Color','Music','Setup'].index(s.inspector));del block
-        hsv=s.get_hsv();self.wheel.hsv=hsv;self.wheel.update()
+        key=self.c.manual_reference()
+        hsv=self.c.manual_hsv();self.wheel.hsv=hsv;self.wheel.update()
         for i,(level,value) in enumerate(self.hsv):
             n=min(359,round(hsv[i]*360)) if i==0 else round(hsv[i]*100);assign(level,n);assign(value,n)
-        assign(self.hex,s.channels[s.selected_channel].color)
-        for spin,n in zip(self.rgb,QColor(s.channels[s.selected_channel].color).getRgb()[:3]):assign(spin,n)
+        assign(self.hex,s.channels[key].color)
+        for spin,n in zip(self.rgb,QColor(s.channels[key].color).getRgb()[:3]):assign(spin,n)
         assign(self.sensitivity,round(s.sensitivity*100));assign(self.relationship,s.relationship);assign(self.separation,round(s.separation*100));assign(self.reduced,not s.motion)
         assign(self.duration,f'{s.transition_seconds:g}');assign(self.curve,s.transition_curve)
-        channel=s.channels[s.selected_channel];assign(self.power,channel.power);assign(self.follow,channel.follow);assign(self.brightness,round(channel.brightness*100))
+        channel=s.channels[key];assign(self.power,channel.power);assign(self.follow,channel.follow);assign(self.brightness,round(channel.brightness*100))

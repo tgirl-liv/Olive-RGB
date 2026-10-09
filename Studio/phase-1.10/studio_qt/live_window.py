@@ -1,11 +1,12 @@
 """Minimal LIVE status/connect affordances around the frozen Studio layout."""
-from PySide6.QtCore import Qt,Slot
+from PySide6.QtCore import Qt,Slot,QSignalBlocker
 from PySide6.QtWidgets import QDialog,QVBoxLayout,QDialogButtonBox,QLabel,QRadioButton,QHBoxLayout
 from studio_ui.state import StudioState
 from .app import StudioWindow
 from .corner_adapter import CornerLampAdapter
 from .widgets.common import button,text
 from .widgets.controls import DeviceChannel
+from .widgets.live_inspector import LiveSetupInspector,replace_tab
 
 
 def choose_startup_mode():
@@ -38,6 +39,15 @@ class LiveStudioWindow(StudioWindow):
         self.centralWidget().layout().insertLayout(2,live_row)
         adapter.connection_changed.connect(self.connection_update)
         adapter.finished.connect(self.cleanup_finished)
+        blocker=QSignalBlocker(self.inspector.device)
+        self.inspector.device.clear()
+        for label,key in (('Both Lights','Both'),('Corner Lamp','Corner'),('Philips Hue','Hue')):self.inspector.device.addItem(label,key)
+        self.inspector.device.setCurrentIndex(self.inspector.device.findData(self.c.state.selected_channel));del blocker
+        self.inspector.device.setAccessibleName('LIVE lighting target')
+        self.inspector.target_notice=text('','muted');self.inspector.target_notice.setWordWrap(True)
+        self.inspector.box.insertWidget(3,self.inspector.target_notice)
+        self.inspector.live_setup=LiveSetupInspector(self)
+        replace_tab(self.inspector,2,self.inspector.live_setup,'Setup')
         self.c.changed.connect(self.live_controls)
         self.live_controls()
     def connect_corner(self):self.c.adapter.connect_corner();self.live_controls()
@@ -57,7 +67,8 @@ class LiveStudioWindow(StudioWindow):
             row.select.setToolTip('LIVE Corner Lamp' if corner else 'Philips Hue — not integrated in LIVE')
             row.dot.setStyleSheet('background:'+('#46dc97' if enabled else '#777386')+';border-radius:6px;' if corner else 'background:#777386;border-radius:6px;')
         corner=self.c.state.selected_channel=='Corner'
-        self.inspector.tabs.setEnabled(enabled and corner)
+        self.inspector.tabs.setEnabled(not self._closing)
+        self.inspector.tabs.widget(0).setEnabled(enabled and corner)
         self.inspector.power.setEnabled(enabled and corner and a.software_power);self.inspector.follow.setEnabled(enabled and corner);self.inspector.brightness.setEnabled(enabled and corner)
         self.inspector.status.setText(('LIVE · '+a.status) if corner else 'NOT INTEGRATED · no Hue hardware')
         self.inspector.power.setToolTip('Software power: OFF sends RGB black; ON restores the selected color. Not a hardware power command.')
@@ -67,8 +78,26 @@ class LiveStudioWindow(StudioWindow):
             panel.setEnabled(False);panel.setToolTip('DEMO-only scenes; unavailable in LIVE')
             panel.status.setText('Unavailable in LIVE · use DEMO for scenes')
         self.pause.setEnabled(False);self.pause.setText('DEMO only')
-        self.inspector.tabs.setTabEnabled(1,False);self.inspector.tabs.setTabEnabled(2,False)
+        self.inspector.tabs.setTabEnabled(1,hasattr(self.inspector,'live_music'))
+        self.inspector.tabs.setTabEnabled(2,True)
+        self.inspector.tabs.setTabToolTip(1,'LIVE music routing' if hasattr(self.inspector,'live_music') else 'Music requires the LIVE Music window')
+        self.inspector.tabs.setTabToolTip(2,'Selected device connection and capabilities')
+        self.inspector.live_setup.refresh()
         self.update_inspector_links()
+        self.refresh_manual_target()
+    def refresh_manual_target(self):
+        c=self.c;ins=self.inspector;keys=c.target_devices()
+        ins.tabs.widget(0).setEnabled(not self._closing and any(not c.target_reason(key,'color') for key in keys))
+        ins.power.setEnabled(not self._closing and any(not c.target_reason(key,'power') for key in keys))
+        ins.brightness.setEnabled(not self._closing and any(not c.target_reason(key,'brightness') for key in keys))
+        if len(keys)>1:ins.follow.setEnabled(False)
+        ins.follow.setToolTip('Follow Master remains independent; select one device to change it')
+        details=[key+': '+(c.target_reason(key,'color') or 'manual color available') for key in keys]
+        if len(keys)>1:
+            details.append('Displayed color/brightness use '+c.manual_reference()+'. Edits apply to eligible targets; other settings stay independent.')
+            details.extend(f'{key}: brightness {c.state.channels[key].brightness:.0%}, power '+('ON' if c.state.channels[key].power else 'OFF') for key in keys)
+        if c.manual_feedback:details.append('Last action: '+c.manual_feedback)
+        ins.target_notice.setText('\n'.join(details))
     def closeEvent(self,event):
         if self._cleanup_done:return super().closeEvent(event)
         event.ignore()

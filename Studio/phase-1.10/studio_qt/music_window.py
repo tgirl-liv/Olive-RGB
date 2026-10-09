@@ -8,6 +8,7 @@ from .music_adapter import MusicLightingAdapter
 from .music_runtime import MusicRuntime
 from .widgets.common import Panel,button,text,slider,assign
 from .preferences import PROFILES,PALETTES
+from .widgets.live_inspector import LiveMusicInspector,replace_tab
 
 
 class MusicLiveWindow(DualLiveWindow):
@@ -65,7 +66,8 @@ class MusicLiveWindow(DualLiveWindow):
         self.page_notes['Music'].setText('LIVE music uses production capture after Start Music. Saved preferences never start capture or connect devices.')
         self.page_notes['Screen'].setText('Screen capture is unavailable in Qt Studio. DEMO inspector controls simulate output only.')
         self.page_notes['Settings'].setText('Qt preferences save automatically, separately from Tkinter settings. DEMO and LIVE configurations are isolated. Connections and running modes are never restored.')
-        self.inspector_links['Music'][1].hide()
+        self.inspector.live_music=LiveMusicInspector(self)
+        replace_tab(self.inspector,1,self.inspector.live_music,'Music')
         self.live_controls()
 
     def music_preferences(self):
@@ -126,6 +128,8 @@ class MusicLiveWindow(DualLiveWindow):
             self.inspector.tabs.widget(0).setEnabled(False)
             self.inspector.status.setText('LIVE · connected · Music owns color')
         for key,check in self.participate.items():check.setEnabled(not self._closing)
+        self.refresh_manual_target()
+        if hasattr(self.inspector,'live_music'):self.inspector.live_music.refresh()
 
     def tick(self):self.timer.stop()  # LIVE never invokes the synthetic animation engine.
 

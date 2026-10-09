@@ -22,7 +22,10 @@ class MasterBus(Panel):
             b=button(name,lambda checked=False,name=name:controller.set('mode',name),True);b.setObjectName('modeSegment');b.setAccessibleName(name+' mode');modes.addWidget(b);self.modes[name]=b
         controller.changed.connect(self.sync);controller.output_changed.connect(self.output);self.reflow();self.sync()
     def edit_output(self):
-        self.c.select_channel('Corner');self.c.state.select_inspector('Color');self.c.changed.emit()
+        if getattr(self.c.adapter,'live',False):self.c.select_target('Both')
+        else:self.c.select_channel('Corner')
+        self.c.state.select_inspector('Color');self.c.changed.emit()
+        if getattr(self.c.adapter,'live',False):self.c.parent().open_tab('Color')
     def resizeEvent(self,event):super().resizeEvent(event);self.reflow()
     def reflow(self):
         for w in [self.power,self.level,self.value,self.mode_widget]:self.grid.removeWidget(w)
@@ -36,7 +39,7 @@ class MasterBus(Panel):
         for name,b in self.modes.items():assign(b,name==s.mode)
         self.output()
     def output(self):
-        color=self.c.display_colors['Corner'];self.color.setToolTip('Edit corner output color · '+color.upper())
+        color=self.c.display_colors['Corner'];self.color.setToolTip(('Edit Both Lights color · Corner '+color.upper()+' · Hue '+self.c.display_colors['Hue'].upper()) if getattr(self.c.adapter,'live',False) else 'Edit corner output color · '+color.upper())
         self.color.setStyleSheet('background:'+color+';border:2px solid #d9c5ef;border-radius:12px;padding:0;')
 
 

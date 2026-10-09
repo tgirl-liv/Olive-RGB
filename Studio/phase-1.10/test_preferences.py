@@ -130,8 +130,8 @@ class PreferencesUITests(unittest.TestCase):
         worker.assert_not_called();hue.assert_not_called();engine.assert_not_called()
         self.assertFalse(w.runtime.busy);self.assertFalse(w.c.adapter.music_active)
         self.assertFalse(w.c.adapter.session.wanted);self.assertFalse(w.c.adapter.hue.wanted)
-        self.assertEqual(w.c.state.mode,'Manual');self.assertFalse(w.open_tab('Setup'));self.assertFalse(w.open_tab('Music'))
-        for _,link in w.inspector_links.values():self.assertFalse(link.isEnabled())
+        self.assertEqual(w.c.state.mode,'Manual');self.assertTrue(w.open_tab('Setup'));self.assertTrue(w.open_tab('Music'))
+        for _,link in w.inspector_links.values():self.assertTrue(link.isEnabled())
         self.assertIn('unavailable',w.page_notes['Screen'].text())
         with patch.object(w.runtime,'start',return_value=True) as start, patch.object(w.c.adapter,'start_music') as route:
             w.start_music();start.assert_called_once_with('MGK',2.31,.77,'Charli xcx — BRAT')
