@@ -91,7 +91,7 @@ class AudioReactor(QWidget):
         self._spectrum_reference+=(peak-self._spectrum_reference)*alpha
         reference=20*math.log10(max(1e-4,self._spectrum_reference))
         intensity=self._finite_unit((20*math.log10(frame.rms)+80)/50)
-        return [self._finite_unit((20*math.log10(max(1e-9,value))-reference+48)/48)*intensity for value in values]
+        return [self._finite_unit((20*math.log10(max(1e-9,value))-reference+48)/48)**.8*intensity for value in values]
 
     def advance_live(self,dt,now):
         dt=max(0.,min(.1,dt))
@@ -107,9 +107,12 @@ class AudioReactor(QWidget):
             elif self.hold[i]>.25:self.peaks[i]=max(self.levels[i],self.peaks[i]-dt*.27)
         # Curve has its own attack/release and spatial smoothing, independent
         # of bar heights and peak markers. No synthetic oscillator in LIVE.
-        weights=(1,2,3,2,1)
+        # Preserve narrow FFT peaks rather than averaging them across five bars.
+        # Bounded contrast deepens valleys without introducing another gain loop.
+        ceiling=max(targets)
         for i in range(72):
-            target=sum(targets[max(0,min(71,i+j-2))]*weight for j,weight in enumerate(weights))/9
+            sample=(targets[max(0,i-1)]+10*targets[i]+targets[min(71,i+1)])/12
+            target=ceiling*(sample/ceiling)**1.6 if ceiling>0 else 0.
             alpha=1-math.exp(-dt/(.018 if target>self.curve_levels[i] else .22))
             self.curve_levels[i]+=(target-self.curve_levels[i])*alpha
         for i,target in enumerate(meters):
@@ -143,7 +146,7 @@ class AudioReactor(QWidget):
         for x in range(14,w,48):p.drawLine(x,8,x,bottom)
         for y in range(22,bottom,32):p.drawLine(8,y,w-8,y)
         step=(w-18)/72;bar=max(1,step-min(3,step*.30))
-        bar_extent=(bottom-20)*(.65 if getattr(self,'live',False) else 1.)
+        bar_extent=(bottom-20)*(.70 if getattr(self,'live',False) else 1.)
         for i,(gradient,color) in enumerate(self.gradients):
             x=9+i*step;height=self.levels[i]*bar_extent
             p.setPen(Qt.PenStyle.NoPen);p.setBrush(gradient)
@@ -156,7 +159,7 @@ class AudioReactor(QWidget):
             sample=self.levels[index]*(1-(position-index))+self.levels[min(71,index+1)]*(position-index)
             if getattr(self,'live',False):
                 sample=self.curve_levels[index]*(1-(position-index))+self.curve_levels[min(71,index+1)]*(position-index)
-                y=bottom*.28-sample*bottom*.20  # Reserved floating region above even full-height LIVE bars.
+                y=bottom*.25-sample*bottom*.22  # Reserved floating region above even full-height LIVE bars.
             else:
                 wave=math.sin(x/max(1,w)*math.tau*2.8+self.phase*2)*(.10+sample*.25)
                 y=bottom*.47-wave*bottom*.75

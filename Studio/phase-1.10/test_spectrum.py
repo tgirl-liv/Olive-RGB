@@ -136,6 +136,31 @@ class SpectrumGuiTests(unittest.TestCase):
         self.assertNotEqual(w.curve_levels,w.levels)
         self.assertEqual(w.frames,0);self.assertEqual(w.phase,0)
 
+    def test_narrow_fft_peaks_retain_curve_contrast_and_move_with_frequency(self):
+        w=self.w;stamp=time.monotonic()
+        for index in (18,50):
+            values=[.0001]*72;values[index]=.1
+            w.set_spectrum_frame(SpectrumFrame(tuple(values),.07,stamp))
+            for n in range(8):w.advance_live(.034,stamp+n*.034)
+            self.assertGreater(w.curve_levels[index],.65)
+            self.assertLess(w.curve_levels[35],.2)
+            self.assertEqual(w.curve_levels.index(max(w.curve_levels)),index)
+        w.set_spectrum_frame(SpectrumFrame((0.,)*72,0.,stamp))
+        before=w.curve_levels[:];w.advance_live(.1,stamp)
+        self.assertTrue(all(a<=b for a,b in zip(w.curve_levels,before)))
+
+    def test_quiet_bands_gain_height_without_raising_silence(self):
+        w=self.w;stamp=time.monotonic();w._spectrum_reference=.1
+        values=[.001]*72;values[10]=.1
+        w.set_spectrum_frame(SpectrumFrame(tuple(values),.01,stamp))
+        targets=w.spectrum_targets(.034,stamp)
+        intensity=(20*math.log10(.01)+80)/50
+        old_quiet_height=(20*math.log10(.001/.1)+48)/48*intensity
+        self.assertGreater(targets[35],old_quiet_height*1.3)
+        self.assertLessEqual(max(targets),intensity)
+        w.set_spectrum_frame(SpectrumFrame(tuple(values),1e-6,stamp))
+        self.assertEqual(w.spectrum_targets(.034,stamp),[0.]*72)
+
     def test_curve_is_positioned_above_even_full_height_bars(self):
         from studio_qt.widgets import audio_reactor as module
         w=self.w;w.resize(720,240);w.levels=[1.]*72;w.peaks=[1.]*72
