@@ -18,9 +18,9 @@ class MusicLiveWindow(DualLiveWindow):
         self.runtime=MusicRuntime(engine_factory)
         self.setWindowTitle('Olive RGB Studio · LIVE Manual / Music')
         self.mode_badge.setText('LIVE · MANUAL / MUSIC')
-        self.reactor.live=True;self.reactor.live_frame=None
-        self.reactor.setAccessibleName('Live measured band proportions and RMS level')
-        self.reactor.setToolTip('Production analysis: normalized bass/mids/treble, raw RMS. No synthetic waveform or FFT bins.')
+        self.reactor.enable_live()
+        self.reactor.setAccessibleName('Live three-band interpolated audio reactor and RMS level')
+        self.reactor.setToolTip('Temporary three-band visualization, not a 72-bin FFT. Bars and floating curve use measured band proportions scaled by RMS; LEVEL maps -60 to -12 dBFS. Band meters show proportions. Raw RMS is in Music status.')
         self.pause.hide()  # The DEMO pause control has no LIVE meaning; Stop is persistent.
         for label in self.reactor.parentWidget().findChildren(QLabel):
             if label.text()=='DEMO':label.setText('LIVE AUDIO')
@@ -87,7 +87,7 @@ class MusicLiveWindow(DualLiveWindow):
     def stop_music(self):
         if not hasattr(self,'runtime'):return
         self.runtime.stop();self.c.adapter.stop_music();self.c.state.mode='Manual';self.c.changed.emit()
-        self.reactor.live_frame=None;self.reactor.update()
+        self.reactor.reset_live()
         self.music_status.setText('Stopping audio…' if self.runtime.busy else 'Audio stopped · manual control restored')
         self.live_controls()
 
@@ -101,15 +101,15 @@ class MusicLiveWindow(DualLiveWindow):
         if (error and self.music_status.text()!=error) or (self.c.adapter.music_active and not wanted):
             self.c.adapter.stop_music();self.c.state.mode='Manual';self.c.changed.emit()
             self.music_status.setText(error or 'Audio stopped · manual control restored')
-            self.reactor.live_frame=None;self.reactor.update()
+            self.reactor.reset_live()
         elif frame is not None and self.c.adapter.music_active:
             self.c.adapter.apply_frame(frame)
-            self.reactor.live_frame=frame;self.reactor.update()
+            self.reactor.set_live_frame(frame)
             self.music_status.setText(f'LIVE · RMS {frame.energy:.4f} · '+('BEAT · ' if frame.beat else '')+'RGB #'+''.join(f'{c:02X}' for c in frame.rgb))
         elif wanted and self.c.adapter.last_frame is None:self.music_status.setText(message)
         elif wanted and time.monotonic()-self.c.adapter.last_frame.timestamp>1:
             self.music_status.setText('Waiting for fresh audio data · Stop remains available')
-            self.reactor.live_frame=None;self.reactor.update()
+            self.reactor.clear_live_frame()
         self.live_controls()
         if not self.runtime.busy and not self.c.adapter.music_active:
             if not error and self.music_status.text()=='Stopping audio…':self.music_status.setText('Audio stopped · manual control restored')
@@ -135,6 +135,7 @@ class MusicLiveWindow(DualLiveWindow):
 
     def closeEvent(self,event):
         if hasattr(self,'runtime'):
+            self.reactor.reset_live()
             self.runtime.stop();self.c.adapter.music_active=False
             if self.runtime.busy:self.music_timer.start()
             if self._cleanup_done and self.runtime.busy:event.ignore();return
