@@ -1,10 +1,11 @@
 """One production capture engine; bounded latest-frame mailbox, no Qt calls."""
 import threading
+from .spectrum_data import SpectrumMailbox
 
 
 def engine_factory(rgb, meter, beat, log):
-    from .music_engine import MusicEngine
-    return MusicEngine(rgb, meter, beat, log)
+    from .spectrum_engine import SpectrumMusicEngine
+    return SpectrumMusicEngine(rgb, meter, beat, log)
 
 
 class MusicRuntime:
@@ -17,6 +18,7 @@ class MusicRuntime:
         self.frame = None
         self.message = 'Stopped'
         self.error = ''
+        self.spectrum=SpectrumMailbox()
 
     @property
     def busy(self):return self.thread is not None and self.thread.is_alive()
@@ -25,6 +27,7 @@ class MusicRuntime:
         with self.lock:
             if self.busy:return False
             self.generation += 1;generation = self.generation
+            self.spectrum.reset(generation)
             self.wanted = True;self.frame = None;self.error = '';self.message = 'Opening default output loopback…'
             self.thread = threading.Thread(target=self._run, args=(generation,profile,sensitivity,smoothing,palette), name='Music lifecycle', daemon=True)
             self.thread.start();return True
@@ -37,7 +40,9 @@ class MusicRuntime:
                 if 'error' in str(message).lower():self.error = str(message)
         def frame(value):
             with self.lock:
-                if self.wanted and generation == self.generation:self.frame = value
+                accepted=self.wanted and generation == self.generation
+                if accepted:self.frame = value
+            if accepted and hasattr(engine,'publish_spectrum'):engine.publish_spectrum(value,self.spectrum,generation)
         try:
             engine = self.factory(lambda *a:None,lambda *a:None,lambda:None,log)
             engine.set_profile(profile);engine.user_sensitivity = sensitivity;engine.user_smoothing = smoothing
@@ -58,9 +63,14 @@ class MusicRuntime:
     def stop(self):
         with self.lock:
             self.wanted = False;self.frame = None
+            self.spectrum.reset()
             if self.engine is not None:self.engine.stop()
 
     def take(self):
         with self.lock:
             frame,self.frame = self.frame,None
             return frame,self.message,self.error,self.wanted
+
+    def take_spectrum(self):
+        # Reduction happens on the GUI caller, outside the lighting mailbox lock.
+        return self.spectrum.take()

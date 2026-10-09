@@ -19,8 +19,8 @@ class MusicLiveWindow(DualLiveWindow):
         self.setWindowTitle('Olive RGB Studio · LIVE Manual / Music')
         self.mode_badge.setText('LIVE · MANUAL / MUSIC')
         self.reactor.enable_live()
-        self.reactor.setAccessibleName('Live three-band interpolated audio reactor and RMS level')
-        self.reactor.setToolTip('Temporary three-band visualization, not a 72-bin FFT. Bars and floating curve use measured band proportions scaled by RMS; LEVEL maps -60 to -12 dBFS. Band meters show proportions. Raw RMS is in Music status.')
+        self.reactor.setAccessibleName('Live log-spaced audio spectrum and RMS level')
+        self.reactor.setToolTip('72 log-spaced bands from the existing audio FFT (20 Hz–20 kHz). Adaptive visual gain and independent curve smoothing; no additional capture. Band meters show proportions; LEVEL maps RMS from -60 to -12 dBFS.')
         self.pause.hide()  # The DEMO pause control has no LIVE meaning; Stop is persistent.
         for label in self.reactor.parentWidget().findChildren(QLabel):
             if label.text()=='DEMO':label.setText('LIVE AUDIO')
@@ -95,6 +95,7 @@ class MusicLiveWindow(DualLiveWindow):
 
     def poll_music(self):
         frame,message,error,wanted=self.runtime.take()
+        spectrum=self.runtime.take_spectrum()
         if self._closing:
             if not self.runtime.busy and self._cleanup_done:self.close()
             return
@@ -110,6 +111,7 @@ class MusicLiveWindow(DualLiveWindow):
         elif wanted and time.monotonic()-self.c.adapter.last_frame.timestamp>1:
             self.music_status.setText('Waiting for fresh audio data · Stop remains available')
             self.reactor.clear_live_frame()
+        if spectrum is not None and wanted and self.c.adapter.music_active:self.reactor.set_spectrum_frame(spectrum)
         self.live_controls()
         if not self.runtime.busy and not self.c.adapter.music_active:
             if not error and self.music_status.text()=='Stopping audio…':self.music_status.setText('Audio stopped · manual control restored')

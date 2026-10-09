@@ -1,4 +1,4 @@
-"""Shared painter: synthetic DEMO or measured three-band LIVE display data."""
+"""Shared painter: synthetic DEMO or measured LIVE FFT display data."""
 import math
 import time
 from PySide6.QtCore import Qt, QRectF, QPointF, QTimer
@@ -38,7 +38,8 @@ class AudioReactor(QWidget):
         self.reset_live()
 
     def reset_live(self):
-        self.live_frame=None
+        self.live_frame=None;self.spectrum_frame=None;self._fft_received=False
+        self._spectrum_reference=1e-4;self.curve_levels=[0.]*72
         self.levels=[0.]*72;self.peaks=[0.]*72;self.hold=[0.]*72
         self.meter_values=[0.]*4
         if hasattr(self,'_live_timer'):self._live_timer.stop()
@@ -49,7 +50,13 @@ class AudioReactor(QWidget):
         if not self._live_timer.isActive():
             self._live_last_tick=time.monotonic();self._live_timer.start()
 
+    def set_spectrum_frame(self,frame):
+        self.spectrum_frame=frame;self._fft_received=True
+        if not self._live_timer.isActive():
+            self._live_last_tick=time.monotonic();self._live_timer.start()
+
     def clear_live_frame(self):
+        self.spectrum_frame=None
         self.live_frame=None  # The GUI timer releases existing levels and peaks.
 
     @staticmethod
@@ -72,21 +79,43 @@ class AudioReactor(QWidget):
             targets.append(((1-amount)*bands[index]+amount*bands[index+1])*intensity)
         return targets,bands+[intensity]
 
+    def spectrum_targets(self,dt,now):
+        frame=self.spectrum_frame
+        if frame is None or not math.isfinite(frame.timestamp) or not 0 <= now-frame.timestamp <= self.LIVE_STALE_SECONDS:
+            return [0.]*72
+        if not math.isfinite(frame.rms) or frame.rms<=1e-5:return [0.]*72
+        values=[max(0,value) if math.isfinite(value) else 0. for value in frame.magnitudes]
+        if len(values)!=72:return [0.]*72
+        peak=max(1e-4,max(values))
+        alpha=1-math.exp(-dt/(.025 if peak>self._spectrum_reference else 1.5))
+        self._spectrum_reference+=(peak-self._spectrum_reference)*alpha
+        reference=20*math.log10(max(1e-4,self._spectrum_reference))
+        intensity=self._finite_unit((20*math.log10(frame.rms)+80)/50)
+        return [self._finite_unit((20*math.log10(max(1e-9,value))-reference+48)/48)*intensity for value in values]
+
     def advance_live(self,dt,now):
+        dt=max(0.,min(.1,dt))
         targets,meters=self.live_targets(self.live_frame,now)
+        if self._fft_received:targets=self.spectrum_targets(dt,now)
         if self.live_frame is not None and (not math.isfinite(self.live_frame.timestamp) or now-self.live_frame.timestamp>self.LIVE_STALE_SECONDS):
             self.live_frame=None
-        dt=max(0.,min(.1,dt))
         for i,target in enumerate(targets):
-            alpha=1-math.exp(-dt/(.045 if target>self.levels[i] else .28))
+            alpha=1-math.exp(-dt/(.025 if target>self.levels[i] else .4))
             self.levels[i]+=(target-self.levels[i])*alpha
             self.hold[i]+=dt
             if self.levels[i]>=self.peaks[i]:self.peaks[i]=self.levels[i];self.hold[i]=0.
             elif self.hold[i]>.25:self.peaks[i]=max(self.levels[i],self.peaks[i]-dt*.27)
+        # Curve has its own attack/release and spatial smoothing, independent
+        # of bar heights and peak markers. No synthetic oscillator in LIVE.
+        weights=(1,2,3,2,1)
+        for i in range(72):
+            target=sum(targets[max(0,min(71,i+j-2))]*weight for j,weight in enumerate(weights))/9
+            alpha=1-math.exp(-dt/(.018 if target>self.curve_levels[i] else .22))
+            self.curve_levels[i]+=(target-self.curve_levels[i])*alpha
         for i,target in enumerate(meters):
             alpha=1-math.exp(-dt/(.045 if target>self.meter_values[i] else .28))
             self.meter_values[i]+=(target-self.meter_values[i])*alpha
-        if not any(targets) and max(self.levels+self.peaks+self.meter_values)<.001:
+        if not any(targets) and max(self.levels+self.peaks+self.meter_values+self.curve_levels)<.001:
             self.reset_live()
         else:self.update()
 
@@ -114,19 +143,23 @@ class AudioReactor(QWidget):
         for x in range(14,w,48):p.drawLine(x,8,x,bottom)
         for y in range(22,bottom,32):p.drawLine(8,y,w-8,y)
         step=(w-18)/72;bar=max(1,step-min(3,step*.30))
+        bar_extent=(bottom-20)*(.65 if getattr(self,'live',False) else 1.)
         for i,(gradient,color) in enumerate(self.gradients):
-            x=9+i*step;height=self.levels[i]*(bottom-20)
+            x=9+i*step;height=self.levels[i]*bar_extent
             p.setPen(Qt.PenStyle.NoPen);p.setBrush(gradient)
             p.drawRoundedRect(QRectF(x,bottom-height,bar,height),min(3,bar/2),min(3,bar/2))
-            p.setPen(QPen(color.lighter(130),1));y=bottom-self.peaks[i]*(bottom-20)-4
+            p.setPen(QPen(color.lighter(130),1));y=bottom-self.peaks[i]*bar_extent-4
             p.drawLine(QPointF(x,y),QPointF(x+bar,y))
         path=QPainterPath()
         for x in range(0,w+3,3):
             position=min(71,x/max(1,w)*71);index=int(position)
             sample=self.levels[index]*(1-(position-index))+self.levels[min(71,index+1)]*(position-index)
-            # LIVE's floating envelope uses measured levels, never a sine oscillator.
-            wave=sample*.45 if getattr(self,'live',False) else math.sin(x/max(1,w)*math.tau*2.8+self.phase*2)*(.10+sample*.25)
-            y=bottom*.47-wave*bottom*.75
+            if getattr(self,'live',False):
+                sample=self.curve_levels[index]*(1-(position-index))+self.curve_levels[min(71,index+1)]*(position-index)
+                y=bottom*.28-sample*bottom*.20  # Reserved floating region above even full-height LIVE bars.
+            else:
+                wave=math.sin(x/max(1,w)*math.tau*2.8+self.phase*2)*(.10+sample*.25)
+                y=bottom*.47-wave*bottom*.75
             if x==0:path.moveTo(x,y)
             else:path.lineTo(x,y)
         for width,color in ((9,QColor(243,75,172,18)),(5,QColor(243,75,172,40)),(1.8,QColor('#FF9ADD'))):
