@@ -3,6 +3,7 @@ from PySide6.QtCore import Qt,QTimer,QSize,Slot
 from PySide6.QtGui import QKeySequence,QShortcut
 from PySide6.QtWidgets import QApplication,QMainWindow,QWidget,QVBoxLayout,QHBoxLayout,QGridLayout,QSplitter,QStackedWidget,QFrame,QComboBox,QLabel
 from studio_ui.state import NAVIGATION,SCENES
+from .preferences import PreferencesStore, restore, snapshot, default_path as preferences_path_default
 from .theme import QSS,FRAME_MS
 from .controller import StudioController
 from .workspace import Workspace, WorkspaceStore, WorkspaceSplitter, visible_geometry, default_path
@@ -41,10 +42,18 @@ class ScenePanel(Panel):
 
 
 class StudioWindow(QMainWindow):
-    def __init__(self,workspace_path=None,adapter=None,state=None):
+    def __init__(self,workspace_path=None,adapter=None,state=None,preferences_path=None):
         super().__init__();self.setWindowTitle('Olive RGB Studio · Qt Preview · DEMO');self.resize(1440,900);self.setMinimumSize(800,600)
         self.store=WorkspaceStore(workspace_path);self.workspace=self.store.load();self._restoring=True
         self.setStyleSheet(QSS);self.c=StudioController(parent=self,adapter=adapter,state=state);self.last_tick=time.monotonic()
+        self.preferences_store=PreferencesStore(preferences_path)
+        self.preferences_mode='live' if getattr(self.c.adapter,'live',False) else 'demo'
+        self.preferences=self.preferences_store.load(self.preferences_mode)
+        if preferences_path is not None:
+            restore(self.c.state,self.preferences)
+            self.c.display_colors={k:v.color for k,v in self.c.state.channels.items()}
+        self.preferences_timer=QTimer(self);self.preferences_timer.setSingleShot(True);self.preferences_timer.setInterval(200)
+        self.preferences_timer.timeout.connect(self.save_preferences)
         shell=QWidget();shell.setObjectName('shell');self.setCentralWidget(shell);root=QVBoxLayout(shell);root.setContentsMargins(12,12,12,12)
         header=QHBoxLayout();brand=QLabel();brand.setPixmap(icon('Logo').pixmap(QSize(28,28)));brand.setFixedSize(40,40);brand.setAlignment(Qt.AlignmentFlag.AlignCenter);brand.setObjectName('brandMark');header.addWidget(brand);header.addWidget(text('OLIVE <span style="color:#ef72eb">RGB</span>','title'));header.addWidget(text('MUSIC STUDIO','muted'));header.addStretch();self.mode_badge=text('DEMO · QT PREVIEW','demo');header.addWidget(self.mode_badge);root.addLayout(header)
         toolbar=QHBoxLayout();self.workspace_toolbar=toolbar;toolbar.addWidget(text('Workspace','muted'))
@@ -54,6 +63,9 @@ class StudioWindow(QMainWindow):
         toolbar.addStretch();self.reset_button=button('Reset layout',self.reset_workspace);toolbar.addWidget(self.reset_button);root.addLayout(toolbar)
         self.workspace_notice=text(self.store.error,'muted');self.workspace_notice.setWordWrap(True);self.workspace_notice.setVisible(bool(self.store.error));root.addWidget(self.workspace_notice)
         QShortcut(QKeySequence('Ctrl+B'),self,activated=self.toggle_sidebar);QShortcut(QKeySequence('Ctrl+I'),self,activated=self.toggle_inspector)
+        self.preferences_notice=text(self.preferences_store.error,'muted');self.preferences_notice.setWordWrap(True)
+        self.preferences_notice.setVisible(bool(self.preferences_store.error));root.addWidget(self.preferences_notice)
+        self.inspector_links={};self.page_notes={}
         body=QHBoxLayout();body.setSpacing(12);root.addLayout(body,1)
         self.sidebar=QFrame();self.sidebar.setObjectName('sidebar');nav=QVBoxLayout(self.sidebar);nav.setContentsMargins(6,12,6,10)
         self.nav={}
@@ -78,8 +90,10 @@ class StudioWindow(QMainWindow):
             elif page=='Devices':
                 for key in self.c.state.channels:panel.box.addWidget(DeviceChannel(self.c,key))
             else:
-                note=text(f'{page} workspace preview. Use the inspector for mock color, music and transition settings. No live connections are available.','muted');note.setWordWrap(True);panel.box.addWidget(note)
-                panel.box.addWidget(button('Open '+('Music' if page=='Music' else 'Setup')+' inspector',lambda checked=False,page=page:self.open_tab('Music' if page=='Music' else 'Setup')))
+                note=text(f'{page}: DEMO-only preview controls. Screen capture is unavailable. Qt lighting and music preferences save separately from Tkinter settings; launch stays idle.','muted');self.page_notes[page]=note;note.setWordWrap(True);panel.box.addWidget(note)
+                target='Music' if page=='Music' else 'Setup'
+                link=button('Open '+target+' inspector',lambda checked=False,target=target:self.open_tab(target))
+                self.inspector_links[page]=(target,link);panel.box.addWidget(link)
             panel.box.addStretch();self.pages.addWidget(scroll(panel))
         self.inspector=Inspector(self.c);self.inspector.setMinimumWidth(260);self.inspector_scroll=scroll(self.inspector);self.inspector_scroll.setMinimumWidth(280);self.splitter.addWidget(self.inspector_scroll)
         self.splitter.setSizes([1000,330]);self.splitter.setStretchFactor(0,1);self.splitter.setStretchFactor(1,0)
@@ -97,7 +111,31 @@ class StudioWindow(QMainWindow):
         self.update_sidebar();self.inspector_scroll.setVisible(not self.workspace.inspector_collapsed)
         self.splitter.setSizes(list(self.workspace.splitter_sizes));self._restoring=False
         self.sync()
-    def open_tab(self,tab):self.c.state.select_inspector(tab);self.c.changed.emit()
+        self.c.changed.connect(self.queue_preferences);self.c.output_changed.connect(self.queue_preferences)
+    def queue_preferences(self,*args):
+        if self.preferences_store.path is not None:self.preferences_timer.start()
+    def music_preferences(self):
+        music=dict(self.preferences['music'])
+        if self.preferences_mode=='demo':
+            for key in ('sensitivity','smoothing','relationship','separation'):music[key]=getattr(self.c.state,key)
+        return music
+    def save_preferences(self):
+        self.preferences_timer.stop()
+        values=snapshot(self.c.state,self.music_preferences())
+        self.preferences_store.save(self.preferences_mode,values)
+        self.preferences_notice.setText(self.preferences_store.error)
+        self.preferences_notice.setVisible(bool(self.preferences_store.error))
+    def update_inspector_links(self):
+        for target,link in self.inspector_links.values():
+            index=('Color','Music','Setup').index(target)
+            enabled=self.inspector.tabs.isEnabled() and self.inspector.tabs.isTabEnabled(index)
+            link.setEnabled(enabled)
+            link.setToolTip('DEMO-only inspector' if not enabled else 'Open '+target+' inspector')
+    def open_tab(self,tab):
+        index=('Color','Music','Setup').index(tab)
+        if not self.inspector.tabs.isEnabled() or not self.inspector.tabs.isTabEnabled(index):return False
+        if self.workspace.inspector_collapsed:self.toggle_inspector()
+        self.c.state.select_inspector(tab);self.c.changed.emit();return True
     def sync(self):
         s=self.c.state;self.pages.setCurrentIndex(NAVIGATION.index(s.page))
         for page,b in self.nav.items():assign(b,page==s.page)
@@ -178,7 +216,7 @@ class StudioWindow(QMainWindow):
         self.refresh_timer()
     def showEvent(self,event):super().showEvent(event);self.last_tick=time.monotonic();self.timer.start()
     def hideEvent(self,event):self.timer.stop();super().hideEvent(event)
-    def closeEvent(self,event):self.save_workspace();self.timer.stop();self.c.transition=None;self.c.adapter.close();super().closeEvent(event)
+    def closeEvent(self,event):self.save_preferences();self.save_workspace();self.timer.stop();self.c.transition=None;self.c.adapter.close();super().closeEvent(event)
 
 
 def main():
@@ -188,6 +226,6 @@ def main():
     if mode is None:return 0
     if mode=='LIVE':
         from .music_window import MusicLiveWindow
-        window=MusicLiveWindow(workspace_path=default_path())
-    else:window=StudioWindow(workspace_path=default_path())
+        window=MusicLiveWindow(workspace_path=default_path(),preferences_path=preferences_path_default())
+    else:window=StudioWindow(workspace_path=default_path(),preferences_path=preferences_path_default())
     window.show();return app.exec()

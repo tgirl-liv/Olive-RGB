@@ -7,9 +7,9 @@ from .widgets.controls import DeviceChannel
 
 
 class DualLiveWindow(LiveStudioWindow):
-    def __init__(self, workspace_path=None, worker_factory=None, hue_factory=None, hue_identity=None, adapter=None):
+    def __init__(self, workspace_path=None, worker_factory=None, hue_factory=None, hue_identity=None, adapter=None,preferences_path=None):
         adapter = adapter if adapter is not None else DualLightingAdapter(worker_factory=worker_factory, hue_factory=hue_factory, hue_identity=hue_identity)
-        super().__init__(workspace_path=workspace_path, adapter=adapter)
+        super().__init__(workspace_path=workspace_path, adapter=adapter,preferences_path=preferences_path)
         self.setWindowTitle('Olive RGB Studio · LIVE Corner + Hue · Manual only')
         self.mode_badge.setText('LIVE · MANUAL')
         self.demo.setText('Corner + Hue')
@@ -67,7 +67,7 @@ class DualLiveWindow(LiveStudioWindow):
         # Mock music/scene settings remain visible as disabled context in LIVE.
         self.inspector.tabs.setEnabled(True)
         self.inspector.tabs.setTabEnabled(1, False)
-        self.inspector.tabs.setTabToolTip(1, 'Live music is not integrated')
+        self.inspector.tabs.setTabToolTip(1, 'DEMO-only inspector; use the LIVE Music page')
         self.inspector.tabs.setTabEnabled(2, False)
         color_enabled = hue and a.hue_caps.get('color', False) if selected_hue else corner
         self.inspector.tabs.widget(0).setEnabled(color_enabled)
@@ -83,6 +83,7 @@ class DualLiveWindow(LiveStudioWindow):
             power = ('on' if observed['power'] else 'off') if 'power' in observed else 'unknown'
             brightness = str(observed.get('brightness', 'unknown'))
             self.hue_note.setText(f'Capabilities: {supported}.\nRead on connect: power {power}, brightness {brightness}/254. RGB is requested, not read back.')
+        self.update_inspector_links()
         for i in (0,1,2):
             if self.inspector.tabs.isTabEnabled(i):
                 if not self.inspector.tabs.isTabEnabled(self.inspector.tabs.currentIndex()):self.inspector.tabs.setCurrentIndex(i)

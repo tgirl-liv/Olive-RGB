@@ -6,13 +6,14 @@ from PySide6.QtWidgets import QHBoxLayout,QComboBox,QCheckBox,QLabel
 from .dual_window import DualLiveWindow
 from .music_adapter import MusicLightingAdapter
 from .music_runtime import MusicRuntime
-from .widgets.common import Panel,button,text,slider
+from .widgets.common import Panel,button,text,slider,assign
+from .preferences import PROFILES,PALETTES
 
 
 class MusicLiveWindow(DualLiveWindow):
-    def __init__(self, workspace_path=None, worker_factory=None, hue_factory=None, hue_identity=None, engine_factory=None):
+    def __init__(self, workspace_path=None, worker_factory=None, hue_factory=None, hue_identity=None, engine_factory=None,preferences_path=None):
         adapter=MusicLightingAdapter(worker_factory=worker_factory,hue_factory=hue_factory,hue_identity=hue_identity)
-        super().__init__(workspace_path=workspace_path,adapter=adapter)
+        super().__init__(workspace_path=workspace_path,adapter=adapter,preferences_path=preferences_path)
         self.runtime=MusicRuntime(engine_factory)
         self.setWindowTitle('Olive RGB Studio · LIVE Manual / Music')
         self.mode_badge.setText('LIVE · MANUAL / MUSIC')
@@ -29,13 +30,14 @@ class MusicLiveWindow(DualLiveWindow):
         self.centralWidget().layout().insertLayout(4,row)
         panel=Panel('LIVE MUSIC')
         note=text('Captures the Windows default output. Change output in Windows; the existing engine follows it. Stop / Esc releases music ownership.','muted');note.setWordWrap(True);panel.box.addWidget(note)
-        self.profile=QComboBox();self.profile.addItems(['Smooth','Reactive','Hyperpop','MGK']);self.profile.setCurrentText('Reactive');panel.box.addWidget(text('Production response profile'));panel.box.addWidget(self.profile)
-        self.palette=QComboBox();self.palette.addItems(['Default','The Weeknd — After Hours','The Weeknd — Dawn FM','The Weeknd — Starboy','Charli xcx — BRAT','Charli xcx — Crash']);panel.box.addWidget(text('Production palette'));panel.box.addWidget(self.palette)
+        self.profile=QComboBox();self.profile.addItems(PROFILES);self.profile.setCurrentText('Reactive');panel.box.addWidget(text('Production response profile'));panel.box.addWidget(self.profile)
+        self.palette=QComboBox();self.palette.addItems(PALETTES);panel.box.addWidget(text('Production palette'));panel.box.addWidget(self.palette)
         self.sensitivity=slider(100,high=300);self.sensitivity.setMinimum(25)
         self.smoothing=slider(100,high=140);self.smoothing.setMinimum(25)
         for name,widget in [('Sensitivity multiplier (%)',self.sensitivity),('Smoothing multiplier (%)',self.smoothing)]:
             widget.setAccessibleName(name);panel.box.addWidget(text(name));panel.box.addWidget(widget)
         self.harmony=QComboBox();self.harmony.addItems(['Coordinated Colors','Same Color']);panel.box.addWidget(text('Production color relationship'));panel.box.addWidget(self.harmony)
+        self.separation=slider(25);panel.box.addWidget(text('Color separation (%)'));panel.box.addWidget(self.separation)
         for combo in (self.profile,self.palette,self.harmony):
             combo.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
             combo.setMinimumContentsLength(12)
@@ -50,13 +52,34 @@ class MusicLiveWindow(DualLiveWindow):
         self.master.modes['Manual'].clicked.connect(self.stop_music)
         self.stop_shortcut=QShortcut(QKeySequence('Esc'),self);self.stop_shortcut.activated.connect(self.stop_music)
         self.music_timer=QTimer(self);self.music_timer.setInterval(33);self.music_timer.timeout.connect(self.poll_music)
+        if preferences_path is not None:
+            music=self.preferences['music']
+            for name in ('profile','palette'):assign(getattr(self,name),music[name])
+            assign(self.harmony,music['relationship'])
+            for name in ('sensitivity','smoothing','separation'):assign(getattr(self,name),round(music[name]*100))
+            for key,enabled in music['participation'].items():
+                assign(self.participate[key],enabled);adapter.set_participation(key,enabled)
+        for widget in (self.profile,self.palette,self.harmony):widget.currentTextChanged.connect(self.queue_preferences)
+        for widget in (self.sensitivity,self.smoothing,self.separation):widget.valueChanged.connect(self.queue_preferences)
+        for widget in self.participate.values():widget.toggled.connect(self.queue_preferences)
+        self.page_notes['Music'].setText('LIVE music uses production capture after Start Music. Saved preferences never start capture or connect devices.')
+        self.page_notes['Screen'].setText('Screen capture is unavailable in Qt Studio. DEMO inspector controls simulate output only.')
+        self.page_notes['Settings'].setText('Qt preferences save automatically, separately from Tkinter settings. DEMO and LIVE configurations are isolated. Connections and running modes are never restored.')
+        self.inspector_links['Music'][1].hide()
         self.live_controls()
+
+    def music_preferences(self):
+        if not hasattr(self,'participate'):return super().music_preferences()
+        return {'profile':self.profile.currentText(),'palette':self.palette.currentText(),
+                'sensitivity':self.sensitivity.value()/100,'smoothing':self.smoothing.value()/100,
+                'relationship':self.harmony.currentText(),'separation':self.separation.value()/100,
+                'participation':{k:w.isChecked() for k,w in self.participate.items()}}
 
     def start_music(self):
         if self._closing or self.runtime.busy:return
         if self.runtime.start(self.profile.currentText(),self.sensitivity.value()/100,self.smoothing.value()/100,self.palette.currentText()):
             self.music_timer.start()
-            self.c.adapter.start_music(self.harmony.currentText());self.c.state.mode='Music';self.c.changed.emit()
+            self.c.adapter.start_music(self.harmony.currentText(),self.separation.value()/100);self.c.state.mode='Music';self.c.changed.emit()
         self.live_controls()
 
     def stop_music(self):
@@ -97,7 +120,7 @@ class MusicLiveWindow(DualLiveWindow):
         self.music_start.setEnabled(not self._closing and not self.runtime.busy)
         self.music_stop.setEnabled(not self._closing and (active or self.runtime.busy))
         self.master.modes['Music'].setEnabled(not self._closing and not self.runtime.busy)
-        for widget in (self.profile,self.palette,self.sensitivity,self.smoothing,self.harmony):widget.setEnabled(not self.runtime.busy and not self._closing)
+        for widget in (self.profile,self.palette,self.sensitivity,self.smoothing,self.harmony,self.separation):widget.setEnabled(not self.runtime.busy and not self._closing)
         selected=self.c.state.selected_channel
         if a.owns(selected):
             self.inspector.tabs.widget(0).setEnabled(False)

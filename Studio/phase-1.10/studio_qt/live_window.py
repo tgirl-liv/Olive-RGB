@@ -21,10 +21,10 @@ def choose_startup_mode():
 
 
 class LiveStudioWindow(StudioWindow):
-    def __init__(self,workspace_path=None,worker_factory=None,adapter=None):
+    def __init__(self,workspace_path=None,worker_factory=None,adapter=None,preferences_path=None):
         state=adapter.state if adapter is not None else StudioState()
         adapter=adapter if adapter is not None else CornerLampAdapter(state,worker_factory=worker_factory)
-        super().__init__(workspace_path=workspace_path,adapter=adapter,state=state)
+        super().__init__(workspace_path=workspace_path,adapter=adapter,state=state,preferences_path=preferences_path)
         adapter.setParent(self);self._closing=False;self._cleanup_done=False
         self.setWindowTitle('Olive RGB Studio · LIVE Corner Lamp · Manual only')
         self.mode_badge.setText('LIVE · CORNER ONLY')
@@ -64,9 +64,11 @@ class LiveStudioWindow(StudioWindow):
         self.master.power.setToolTip('Software power through RGB black, matching the existing application.')
         from .app import ScenePanel
         for panel in self.findChildren(ScenePanel):
-            panel.setEnabled(False);panel.setToolTip('Scene lighting is unavailable in LIVE Phase 1.8')
+            panel.setEnabled(False);panel.setToolTip('DEMO-only scenes; unavailable in LIVE')
             panel.status.setText('Unavailable in LIVE · use DEMO for scenes')
         self.pause.setEnabled(False);self.pause.setText('DEMO only')
+        self.inspector.tabs.setTabEnabled(1,False);self.inspector.tabs.setTabEnabled(2,False)
+        self.update_inspector_links()
     def closeEvent(self,event):
         if self._cleanup_done:return super().closeEvent(event)
         event.ignore()
