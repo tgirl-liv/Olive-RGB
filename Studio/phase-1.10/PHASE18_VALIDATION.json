@@ -1,0 +1,331 @@
+{
+  "protected_count": 53,
+  "protected_files": {
+    ".gitignore": {
+      "expected": "c6b8bf71d128386987989c83c124573e949fc1d1ef695cb880ce21204cc0f20f",
+      "actual": "c6b8bf71d128386987989c83c124573e949fc1d1ef695cb880ce21204cc0f20f",
+      "unchanged": true
+    },
+    "album_colors.py": {
+      "expected": "245a1006045a0e6409d39e1a8539ef304ffbb32ee3540b627feed283e6e00745",
+      "actual": "245a1006045a0e6409d39e1a8539ef304ffbb32ee3540b627feed283e6e00745",
+      "unchanged": true
+    },
+    "BASELINE_SHA256.json": {
+      "expected": "c85202781199cbde3e25b80382e7e1d620256203267977b5a747431373382b6c",
+      "actual": "c85202781199cbde3e25b80382e7e1d620256203267977b5a747431373382b6c",
+      "unchanged": true
+    },
+    "build_windows.bat": {
+      "expected": "9bfaef965901da63b2ef836734f8b1990f7c54cf7823c7cbe4151a047e19e885",
+      "actual": "9bfaef965901da63b2ef836734f8b1990f7c54cf7823c7cbe4151a047e19e885",
+      "unchanged": true
+    },
+    "check_music_gui.py": {
+      "expected": "529e84b11acdea81711f0dc92d7c9fbb8ce94dd36d85bf476d3b16dca7602d97",
+      "actual": "529e84b11acdea81711f0dc92d7c9fbb8ce94dd36d85bf476d3b16dca7602d97",
+      "unchanged": true
+    },
+    "COMPATIBILITY_UPDATE.md": {
+      "expected": "54d6a0576512e6cc54be9c8123d8211f899cc05701ef7cd9ca61006483d6a151",
+      "actual": "54d6a0576512e6cc54be9c8123d8211f899cc05701ef7cd9ca61006483d6a151",
+      "unchanged": true
+    },
+    "CONNECTION_DIAGNOSTICS.md": {
+      "expected": "b0b59f6f84591de336ff93259924fb1ff2fd6ef9fad0ee9b142f5dee0dfcb9c1",
+      "actual": "b0b59f6f84591de336ff93259924fb1ff2fd6ef9fad0ee9b142f5dee0dfcb9c1",
+      "unchanged": true
+    },
+    "COORDINATED_MUSIC.md": {
+      "expected": "10f7309ab3d5695e92192a7508aa96ecee4642c495f5d33d67a19930ce887f72",
+      "actual": "10f7309ab3d5695e92192a7508aa96ecee4642c495f5d33d67a19930ce887f72",
+      "unchanged": true
+    },
+    "hue_controls.py": {
+      "expected": "5490263983dffc9b779a967e2b8cd1f2f3168949f4a6cc351961ba03364eebf9",
+      "actual": "5490263983dffc9b779a967e2b8cd1f2f3168949f4a6cc351961ba03364eebf9",
+      "unchanged": true
+    },
+    "hue_driver.py": {
+      "expected": "62fa23cc08ab7fe950098a600ea58efe40079edc225d15e965cacaf67557fe43",
+      "actual": "62fa23cc08ab7fe950098a600ea58efe40079edc225d15e965cacaf67557fe43",
+      "unchanged": true
+    },
+    "HUE_UPDATE.md": {
+      "expected": "80229e182b7bbd0cc5db9e5bedc25ad6045f27833f83ef72c683d7a97f2ee4cb",
+      "actual": "80229e182b7bbd0cc5db9e5bedc25ad6045f27833f83ef72c683d7a97f2ee4cb",
+      "unchanged": true
+    },
+    "install_dependencies.bat": {
+      "expected": "bd384642017f60dcca96c439ac143cd6a9277cfd6e30d200f9ebb7ccdb598989",
+      "actual": "bd384642017f60dcca96c439ac143cd6a9277cfd6e30d200f9ebb7ccdb598989",
+      "unchanged": true
+    },
+    "Launch Studio Preview.bat": {
+      "expected": "3f8f6e46f38624f6f52b678b427c7a5211fe2fbfddb10825365e252804283445",
+      "actual": "3f8f6e46f38624f6f52b678b427c7a5211fe2fbfddb10825365e252804283445",
+      "unchanged": true
+    },
+    "ledble_driver.py": {
+      "expected": "9185e67f0bb6a4ba28b3bb7bda8c6dd4d9d115f0bba037a8448b89be2a0d9067",
+      "actual": "9185e67f0bb6a4ba28b3bb7bda8c6dd4d9d115f0bba037a8448b89be2a0d9067",
+      "unchanged": true
+    },
+    "LEDBLE_UPDATE.md": {
+      "expected": "ae5b3247dafa057966da4ccb9a36d42642f28974be2d830bddb19b501a0659b0",
+      "actual": "ae5b3247dafa057966da4ccb9a36d42642f28974be2d830bddb19b501a0659b0",
+      "unchanged": true
+    },
+    "music_coordination.py": {
+      "expected": "fe09738d4b63d3646d6d8bf918c1d5d38493f4e3a890163360f374b4b44d7a5c",
+      "actual": "fe09738d4b63d3646d6d8bf918c1d5d38493f4e3a890163360f374b4b44d7a5c",
+      "unchanged": true
+    },
+    "Olive RGB v1.4 Preview.spec": {
+      "expected": "d35af6feedc850cf83d8a5cc029ceb000e91c39c6c0b70b1a04fbf86d32af57c",
+      "actual": "d35af6feedc850cf83d8a5cc029ceb000e91c39c6c0b70b1a04fbf86d32af57c",
+      "unchanged": true
+    },
+    "Olive RGB.spec": {
+      "expected": "cdf61399849b04467af1e5bf5ba80b2cd29fc3f0ea9aaa1721fef8c880201eaf",
+      "actual": "cdf61399849b04467af1e5bf5ba80b2cd29fc3f0ea9aaa1721fef8c880201eaf",
+      "unchanged": true
+    },
+    "olive_rgb.ico": {
+      "expected": "826cc53a53b08c49374340a7a176736ce2e4b0f24ffb028103f25782b35155d1",
+      "actual": "826cc53a53b08c49374340a7a176736ce2e4b0f24ffb028103f25782b35155d1",
+      "unchanged": true
+    },
+    "olive_rgb.py": {
+      "expected": "a5c8d4ad48b51f3d3d89569c3daf94b76eec9f0a658734714b6505506743cd4c",
+      "actual": "a5c8d4ad48b51f3d3d89569c3daf94b76eec9f0a658734714b6505506743cd4c",
+      "unchanged": true
+    },
+    "olive_rgb_icon.png": {
+      "expected": "40c49b85ba471d8a7532033f026c63a439eaf6bd7290b66fa5c80b66e2f5b5bc",
+      "actual": "40c49b85ba471d8a7532033f026c63a439eaf6bd7290b66fa5c80b66e2f5b5bc",
+      "unchanged": true
+    },
+    "phase13-1080x760.png": {
+      "expected": "0e4d0a4330ab98ce2701ebe81abb2f911f69470e308ea3c164740c3a5fd84393",
+      "actual": "0e4d0a4330ab98ce2701ebe81abb2f911f69470e308ea3c164740c3a5fd84393",
+      "unchanged": true
+    },
+    "phase13-1280x800.png": {
+      "expected": "0bc826b47aab6c5828f6a3358eac16ebe6346d8a60dd300c888baa639a4c8c71",
+      "actual": "0bc826b47aab6c5828f6a3358eac16ebe6346d8a60dd300c888baa639a4c8c71",
+      "unchanged": true
+    },
+    "phase13-1440x900.png": {
+      "expected": "dd619d7970af65eab2bcb9fc72bbb88cba5c017714d7899665ee92d53149c68c",
+      "actual": "dd619d7970af65eab2bcb9fc72bbb88cba5c017714d7899665ee92d53149c68c",
+      "unchanged": true
+    },
+    "phase13-800x600-detail.png": {
+      "expected": "52ad14a12ce9b2e0f3552b28154ca648bee751959daa7b51a9346eab71c56220",
+      "actual": "52ad14a12ce9b2e0f3552b28154ca648bee751959daa7b51a9346eab71c56220",
+      "unchanged": true
+    },
+    "phase13-800x600.png": {
+      "expected": "2e1c0d021a6d29be8287d50f463ae950faca8e495df8687e23cd595837c688e5",
+      "actual": "2e1c0d021a6d29be8287d50f463ae950faca8e495df8687e23cd595837c688e5",
+      "unchanged": true
+    },
+    "phase13-before.png": {
+      "expected": "5185ef893b9143b0407ae1860787d40e6dbca0a8a28aa639e2a19c452d93de24",
+      "actual": "5185ef893b9143b0407ae1860787d40e6dbca0a8a28aa639e2a19c452d93de24",
+      "unchanged": true
+    },
+    "PHASE_1_3.md": {
+      "expected": "e499d6988d406a711ae6c8512195f4b1573f2ff711b4739b619e21e5768fc9ab",
+      "actual": "e499d6988d406a711ae6c8512195f4b1573f2ff711b4739b619e21e5768fc9ab",
+      "unchanged": true
+    },
+    "README.md": {
+      "expected": "07033d27c200103c7ecc2a0c183e9a030564c8422b90d14df74cea46667edaed",
+      "actual": "07033d27c200103c7ecc2a0c183e9a030564c8422b90d14df74cea46667edaed",
+      "unchanged": true
+    },
+    "requirements.txt": {
+      "expected": "24104b3dc842f9eac1d06531f264f7adb22304c4594d91f9674f85c59f497368",
+      "actual": "24104b3dc842f9eac1d06531f264f7adb22304c4594d91f9674f85c59f497368",
+      "unchanged": true
+    },
+    "studio-after-1080x760.png": {
+      "expected": "b0fedb148aa7168642173ac3092feda05e6efc5642c2a8d2b4dda61735181b44",
+      "actual": "b0fedb148aa7168642173ac3092feda05e6efc5642c2a8d2b4dda61735181b44",
+      "unchanged": true
+    },
+    "studio-after-1440x900.png": {
+      "expected": "5185ef893b9143b0407ae1860787d40e6dbca0a8a28aa639e2a19c452d93de24",
+      "actual": "5185ef893b9143b0407ae1860787d40e6dbca0a8a28aa639e2a19c452d93de24",
+      "unchanged": true
+    },
+    "studio-after-800x600-detail.png": {
+      "expected": "feb41bfa9f0570391ee77bdc07bc41b501395ceab36763ec6f56a057d62a9026",
+      "actual": "feb41bfa9f0570391ee77bdc07bc41b501395ceab36763ec6f56a057d62a9026",
+      "unchanged": true
+    },
+    "studio-after-800x600.png": {
+      "expected": "b7a799d57ebf25f247c55ef89ed3cae289534b2597e10cfc199e74a4e7c14627",
+      "actual": "b7a799d57ebf25f247c55ef89ed3cae289534b2597e10cfc199e74a4e7c14627",
+      "unchanged": true
+    },
+    "studio-before.png": {
+      "expected": "249dbeb1c442a51fa6c75aaa5d0adebd7212d827620f4fcd865cff2bd202e649",
+      "actual": "249dbeb1c442a51fa6c75aaa5d0adebd7212d827620f4fcd865cff2bd202e649",
+      "unchanged": true
+    },
+    "studio-preview-small.png": {
+      "expected": "e6a3eb908dd3ea9fa99bca0655d6ddc117c9020d3d1c092920ad8f2e45c87f53",
+      "actual": "e6a3eb908dd3ea9fa99bca0655d6ddc117c9020d3d1c092920ad8f2e45c87f53",
+      "unchanged": true
+    },
+    "studio-preview.png": {
+      "expected": "249dbeb1c442a51fa6c75aaa5d0adebd7212d827620f4fcd865cff2bd202e649",
+      "actual": "249dbeb1c442a51fa6c75aaa5d0adebd7212d827620f4fcd865cff2bd202e649",
+      "unchanged": true
+    },
+    "STUDIO_BASELINE_SHA256.json": {
+      "expected": "5d4863136847778b47a01e7761cef87b21430aef4ab875e91eafb0930f632965",
+      "actual": "5d4863136847778b47a01e7761cef87b21430aef4ab875e91eafb0930f632965",
+      "unchanged": true
+    },
+    "STUDIO_PHASE1.md": {
+      "expected": "84405ce9fe1575fe075840076aaa4be772c8d5cf8d36c51ef417a86d8c930e57",
+      "actual": "84405ce9fe1575fe075840076aaa4be772c8d5cf8d36c51ef417a86d8c930e57",
+      "unchanged": true
+    },
+    "studio_preview.py": {
+      "expected": "7a27c523fbded6d6c6a7aa0f8307dfd7dd99f022e1e33c3d934ed88d73ad8346",
+      "actual": "7a27c523fbded6d6c6a7aa0f8307dfd7dd99f022e1e33c3d934ed88d73ad8346",
+      "unchanged": true
+    },
+    "TESTING.md": {
+      "expected": "a5c0512e8c0b65dab4d06c28c31f249ba7a23ce54f464a836d75543d410113dc",
+      "actual": "a5c0512e8c0b65dab4d06c28c31f249ba7a23ce54f464a836d75543d410113dc",
+      "unchanged": true
+    },
+    "test_hue_api.py": {
+      "expected": "64d1619054970dc846dcaf6043633741091f9494b4a20cd69978926104f42420",
+      "actual": "64d1619054970dc846dcaf6043633741091f9494b4a20cd69978926104f42420",
+      "unchanged": true
+    },
+    "test_hue_integration.py": {
+      "expected": "2fa48475f2511ae0615b6a64bcde84002d31f600554d48efe9ff6ddae7ed821e",
+      "actual": "2fa48475f2511ae0615b6a64bcde84002d31f600554d48efe9ff6ddae7ed821e",
+      "unchanged": true
+    },
+    "test_ledble.py": {
+      "expected": "650de9e238986c7023f532c2db75ec6b74eae0a940b86cf4860d04e8eafbd2cd",
+      "actual": "650de9e238986c7023f532c2db75ec6b74eae0a940b86cf4860d04e8eafbd2cd",
+      "unchanged": true
+    },
+    "test_ledble_retry.py": {
+      "expected": "0cc116285b35629eb349891bbe03eb8701ae12d7f694b7e7b5292528e907e473",
+      "actual": "0cc116285b35629eb349891bbe03eb8701ae12d7f694b7e7b5292528e907e473",
+      "unchanged": true
+    },
+    "test_music_coordination.py": {
+      "expected": "19c8175448004da704291a565a34fac69349fd9c1ded409c70d94313b47849d8",
+      "actual": "19c8175448004da704291a565a34fac69349fd9c1ded409c70d94313b47849d8",
+      "unchanged": true
+    },
+    "test_studio_preview.py": {
+      "expected": "48c53283361a13016b67d42be62642186f1d6a575dba788f5aeff6a928d70c1f",
+      "actual": "48c53283361a13016b67d42be62642186f1d6a575dba788f5aeff6a928d70c1f",
+      "unchanged": true
+    },
+    "VISUAL_REFINEMENT.md": {
+      "expected": "4185f48e5b32336e7afc5cd780b7d323657f72c6eeb257e98058af349d6920ac",
+      "actual": "4185f48e5b32336e7afc5cd780b7d323657f72c6eeb257e98058af349d6920ac",
+      "unchanged": true
+    },
+    "studio_ui/app.py": {
+      "expected": "095228d18f2af899f31d480fd922a92a5c8b4633de994087ac301255f46c2cc6",
+      "actual": "095228d18f2af899f31d480fd922a92a5c8b4633de994087ac301255f46c2cc6",
+      "unchanged": true
+    },
+    "studio_ui/state.py": {
+      "expected": "117b1e71e6794294f51ba036af72af28dbefd113990b18fce4ec86fcfb96888d",
+      "actual": "117b1e71e6794294f51ba036af72af28dbefd113990b18fce4ec86fcfb96888d",
+      "unchanged": true
+    },
+    "studio_ui/theme.py": {
+      "expected": "8ab0973cbee386bc864c6738b1b736b2c6ec79ad93fd3d704c85dcbb83158442",
+      "actual": "8ab0973cbee386bc864c6738b1b736b2c6ec79ad93fd3d704c85dcbb83158442",
+      "unchanged": true
+    },
+    "studio_ui/widgets.py": {
+      "expected": "b0c5df326621004f29404bfc7af223917f19adc52b321f5974f2e623463c1091",
+      "actual": "b0c5df326621004f29404bfc7af223917f19adc52b321f5974f2e623463c1091",
+      "unchanged": true
+    },
+    "studio_ui/__init__.py": {
+      "expected": "0c18308381ee173fac5f21b2a48a37e07786b01f319b8646f994d078219a2be4",
+      "actual": "0c18308381ee173fac5f21b2a48a37e07786b01f319b8646f994d078219a2be4",
+      "unchanged": true
+    }
+  },
+  "changed_existing_files": [
+    "studio_qt/app.py",
+    "studio_qt/controller.py",
+    "studio_qt/widgets/inspector.py"
+  ],
+  "missing_files": [],
+  "parsed_python_files": 45,
+  "tests": {
+    "live": 28,
+    "qt_adapter_workspace": 43,
+    "tkinter_backend": 44,
+    "total": 115
+  },
+  "hardware_tested": false,
+  "source_sha256": {
+    "album_colors.py": "245a1006045a0e6409d39e1a8539ef304ffbb32ee3540b627feed283e6e00745",
+    "capture_live_validation.py": "ad0f3464118cdc5f9085c6ec19842cf6603448355ecb275849c7c201eeb2557a",
+    "capture_studio_qt.py": "2b0e9717f440eb9682560b13e428be071aa06f49dcb7b6fd7c285d0bf09cfc04",
+    "capture_workspace.py": "e553ab85418e5e3490bff4ac5b7a67c53d7aaa7456aa28259f76b8882fd27cf7",
+    "check_music_gui.py": "529e84b11acdea81711f0dc92d7c9fbb8ce94dd36d85bf476d3b16dca7602d97",
+    "hue_controls.py": "5490263983dffc9b779a967e2b8cd1f2f3168949f4a6cc351961ba03364eebf9",
+    "hue_driver.py": "62fa23cc08ab7fe950098a600ea58efe40079edc225d15e965cacaf67557fe43",
+    "ledble_driver.py": "9185e67f0bb6a4ba28b3bb7bda8c6dd4d9d115f0bba037a8448b89be2a0d9067",
+    "music_coordination.py": "fe09738d4b63d3646d6d8bf918c1d5d38493f4e3a890163360f374b4b44d7a5c",
+    "olive_rgb.py": "a5c8d4ad48b51f3d3d89569c3daf94b76eec9f0a658734714b6505506743cd4c",
+    "studio_preview.py": "7a27c523fbded6d6c6a7aa0f8307dfd7dd99f022e1e33c3d934ed88d73ad8346",
+    "studio_qt_preview.py": "43690c46f40b47473e2f96cdadadddf33a9bdf124d810395f8915d695335a806",
+    "test_corner_live.py": "1e921df8f0e9733b4857205a009d6e8ffaca0b3aab9c68176cbe357c7ba47b5b",
+    "test_hue_api.py": "64d1619054970dc846dcaf6043633741091f9494b4a20cd69978926104f42420",
+    "test_hue_integration.py": "2fa48475f2511ae0615b6a64bcde84002d31f600554d48efe9ff6ddae7ed821e",
+    "test_ledble.py": "650de9e238986c7023f532c2db75ec6b74eae0a940b86cf4860d04e8eafbd2cd",
+    "test_ledble_retry.py": "0cc116285b35629eb349891bbe03eb8701ae12d7f694b7e7b5292528e907e473",
+    "test_music_coordination.py": "19c8175448004da704291a565a34fac69349fd9c1ded409c70d94313b47849d8",
+    "test_studio_adapter.py": "ee6764c3d471c938d0c8bae2dd55b85fa5bd9640191510ae691ee85f07b49e78",
+    "test_studio_preview.py": "48c53283361a13016b67d42be62642186f1d6a575dba788f5aeff6a928d70c1f",
+    "test_studio_qt.py": "802d8804f07afab98962bcfa6aa37cb94b77273ca0b9077a624cf7fd2b0b0584",
+    "test_workspace.py": "e82db4003f27bd73fe9541c2f7c4397b4ff0dd8fcef02d58ead40caa22b50ed8",
+    "studio_qt/app.py": "4755fee7bb12d9d3d4b0629e12fa2bcb007ed9039255c1d2f4aa7ba92bfc0ffc",
+    "studio_qt/backend_adapter.py": "3b877f5a5acb90544a0dcdab29afad45d6101ed1734a28763663542cf6513024",
+    "studio_qt/controller.py": "49b44d70665e99fa4db7177f2f88c07cbd7f09a3e16a3baa850a493e508c51ed",
+    "studio_qt/corner_adapter.py": "eb259e9cc6c9f53f28bbd31cf1526b81473ef8cc373b11b5cdb8522a3f159693",
+    "studio_qt/corner_session.py": "453867e582f61b953e1a378378fc46cafce7208f694fd3fd042fa44533c911f5",
+    "studio_qt/corner_worker.py": "78a9a0820156b8671363f085e1c2454924e7fe177167db2876a804d67a114680",
+    "studio_qt/live_window.py": "6e6db8750e21ad58c060203c679d7dccfc6e1dea306bf0d0a75db0c730c29f4c",
+    "studio_qt/theme.py": "baaf73677dad28381efe318b04d43a362fbb17065a4b32319fe8eee0ca8675c0",
+    "studio_qt/workspace.py": "17d26053b48d58698acdd3ccf4a2737eee657f61bccce6320d3c5a694d8987e3",
+    "studio_qt/__init__.py": "52ec2779bc4953729b34708b912913d5b56744aaf2cc96e0e2abe60210deab16",
+    "studio_ui/app.py": "095228d18f2af899f31d480fd922a92a5c8b4633de994087ac301255f46c2cc6",
+    "studio_ui/state.py": "117b1e71e6794294f51ba036af72af28dbefd113990b18fce4ec86fcfb96888d",
+    "studio_ui/theme.py": "8ab0973cbee386bc864c6738b1b736b2c6ec79ad93fd3d704c85dcbb83158442",
+    "studio_ui/widgets.py": "b0c5df326621004f29404bfc7af223917f19adc52b321f5974f2e623463c1091",
+    "studio_ui/__init__.py": "0c18308381ee173fac5f21b2a48a37e07786b01f319b8646f994d078219a2be4",
+    "studio_qt/widgets/audio_reactor.py": "b12cf3f1598a47f0d1a6162d10433cddaeca11b87199c2b9c3e9a2fa8f0eb9ca",
+    "studio_qt/widgets/color_wheel.py": "353544538e3830343604ebfa892cf6d405d980c393382669d5b47f71a0929b11",
+    "studio_qt/widgets/common.py": "acddeb3335638d64faa706a56c0a86cf7e8941af847401a597a5926187510203",
+    "studio_qt/widgets/controls.py": "5842afab79a8f2b605abd55386cd64721bb2c0bcda19048a15609d6fdede6b2d",
+    "studio_qt/widgets/icons.py": "059b8c1597de73a343ba518f970d71943afce5525e1f81e613cc1217a388a79e",
+    "studio_qt/widgets/inspector.py": "bbee1391a974b5fe35126d4270135f42d98548dbebb182bdb29f0fec94af4666",
+    "studio_qt/widgets/scene_pad.py": "f14ef2a1f27c04b94495563f3d2fffa1e7ead9b4bdff35e09c34861b44ec5916",
+    "studio_qt/widgets/__init__.py": "39d3990ac17e6648d29bfe47d56424b2a3edc232826a1764fbd419fb7083ccb5"
+  }
+}

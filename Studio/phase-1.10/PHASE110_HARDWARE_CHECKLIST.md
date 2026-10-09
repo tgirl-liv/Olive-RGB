@@ -1,0 +1,19 @@
+# Phase 1.10 — Windows physical checklist (not yet performed)
+
+1. Keep Phase 1.9 and the known-working Phase 1.8 copy. Extract this source separately, run its Qt setup if needed, rerun Setup Live Corner Preview, then Launch Qt Preview. Close other controlling/capture applications.
+2. Verify DEMO first: simulated visuals and controls should work without opening real audio or Bluetooth. Restart and explicitly select LIVE. Confirm no automatic connection or audio capture.
+3. Validate manual Corner-only, Hue-only and both-device control using the Phase 1.9 checklist before testing music. Record actual Hue capabilities and identity; do not infer physical success from test screenshots.
+4. Play music through the Windows default playback output. Open the Music page, select Reactive/Default initially, choose participants, then press Start Music. Confirm real RMS/band/beat activity and primary RGB change with the audio. The display shows normalized band proportions, not a raw waveform.
+5. Test Corner participation alone, Hue alone, then both. In Coordinated Colors, observe related but different colors on RGB-capable devices. Try Same Color. White-only Hue should receive only its supported power/brightness behavior.
+6. Opt one device out while music continues. Confirm manual color/power/brightness work on that device without being overwritten, while the other keeps reacting. Opt it back in; manual color should be disabled while Music owns it.
+7. During music, test local brightness and power for each participant. With Follow Master ON, verify Master brightness/power additionally apply once. With it OFF, Master changes must not affect that participant's local-controlled response. Nonparticipants must keep manual ownership.
+8. Press Stop Music, then repeat with Esc and Manual. Confirm music-generated changes cease immediately, manual controls are available, and audio releases. Requested manual UI settings are restored, not an unknown physical pre-session color. A packet already in flight may finish.
+9. Stop, change profile, sensitivity, smoothing and palette, then restart. Check that changes match the existing production response. Silence can leave a low light level because of the existing profile floor.
+10. Disconnect/power off either light during playback. Audio and the other light should continue; the failed device must report its own status and require explicit reconnect. Reconnect explicitly and verify participating routing resumes without starting a second engine.
+11. Change the Windows default playback output during capture. Verify the existing engine follows it or reports a meaningful audio error. Remove/disable the selected output to test loss. Errors must not silently become synthetic data. Stop and restart after resolving the source; stale input should show a waiting message.
+12. Exercise rapid brightness changes and repeated Start/Stop. No competing capture sessions or command backlog should develop. Restart stays disabled until the old capture thread releases.
+13. Close while starting capture, during playback and during Bluetooth connection attempts. The GUI should remain responsive while cleanup finishes. A hung audio driver may delay final closure; record that separately rather than treating it as successful cleanup.
+14. Check Studio/Music at the four supported sizes and your native Windows DPI. Scroll to participation controls at small sizes. Stop must remain accessible outside scroll areas.
+15. Close this release, then independently relaunch the known-good previous application to confirm recoverability. Do not run both against the same devices simultaneously.
+
+Record Windows/audio device/package versions, actual lamp identities and capabilities, source changes, pass/fail per step, physical observations, Stop latency and exact errors. No physical success should be reported until the user confirms these checks.

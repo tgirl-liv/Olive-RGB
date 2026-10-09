@@ -1,0 +1,54 @@
+[
+  {
+    "file": "qt-1440x900-scale-1.25.png",
+    "logical_size": [
+      1440,
+      900
+    ],
+    "pixel_size": [
+      1800,
+      1125
+    ],
+    "device_pixel_ratio": 1.25,
+    "horizontal_scroll": 0
+  },
+  {
+    "file": "qt-1280x800-scale-1.25.png",
+    "logical_size": [
+      1280,
+      800
+    ],
+    "pixel_size": [
+      1600,
+      1000
+    ],
+    "device_pixel_ratio": 1.25,
+    "horizontal_scroll": 0
+  },
+  {
+    "file": "qt-1080x760-scale-1.25.png",
+    "logical_size": [
+      1080,
+      760
+    ],
+    "pixel_size": [
+      1350,
+      950
+    ],
+    "device_pixel_ratio": 1.25,
+    "horizontal_scroll": 0
+  },
+  {
+    "file": "qt-800x600-scale-1.25.png",
+    "logical_size": [
+      800,
+      600
+    ],
+    "pixel_size": [
+      1000,
+      750
+    ],
+    "device_pixel_ratio": 1.25,
+    "horizontal_scroll": 0
+  }
+]

@@ -1,0 +1,53 @@
+{
+  "protected_file_count": 53,
+  "modified_protected_files": [],
+  "syntax_files_checked": 17,
+  "tests": {
+    "qt": 20,
+    "adapter": 5,
+    "unchanged_studio": 17,
+    "existing_regressions": 27,
+    "distinct_total": 69,
+    "additional_dpi_checks": 6
+  },
+  "hardware_tested": false,
+  "new_dependencies": [],
+  "modified_from_phase14": [
+    "capture_studio_qt.py",
+    "qt-screenshots/qt-1080x760-scale-1.25.png",
+    "qt-screenshots/qt-1080x760-scale-1.5.png",
+    "qt-screenshots/qt-1080x760-scale-1.png",
+    "qt-screenshots/qt-1280x800-scale-1.25.png",
+    "qt-screenshots/qt-1280x800-scale-1.5.png",
+    "qt-screenshots/qt-1280x800-scale-1.png",
+    "qt-screenshots/qt-1440x900-scale-1.25.png",
+    "qt-screenshots/qt-1440x900-scale-1.5.png",
+    "qt-screenshots/qt-1440x900-scale-1.png",
+    "qt-screenshots/qt-800x600-scale-1.25.png",
+    "qt-screenshots/qt-800x600-scale-1.5.png",
+    "qt-screenshots/qt-800x600-scale-1.png",
+    "qt-screenshots/qt-scenes-800x600-scale-1.25.png",
+    "qt-screenshots/qt-scenes-800x600-scale-1.5.png",
+    "qt-screenshots/qt-scenes-800x600-scale-1.png",
+    "studio_qt/app.py",
+    "studio_qt/controller.py",
+    "studio_qt/theme.py",
+    "studio_qt/widgets/audio_reactor.py",
+    "studio_qt/widgets/controls.py",
+    "studio_qt/widgets/inspector.py",
+    "test_studio_qt.py"
+  ],
+  "added_to_phase14": [
+    "BACKEND_ADAPTER_ARCHITECTURE.md",
+    "PHASE15_BASELINE_SHA256.json",
+    "PHASE_1_5.md",
+    "studio_qt/backend_adapter.py",
+    "studio_qt/widgets/icons.py",
+    "test_studio_adapter.py"
+  ],
+  "omitted_old_artifacts": [
+    "QT_VALIDATION.json",
+    "qt-screenshots/qt-rgb-800x600.png"
+  ],
+  "dpi": "QT_SCALE_FACTOR, native Windows Qt platform; OS settings unchanged; actual dimensions in screenshot metrics"
+}

@@ -1,0 +1,115 @@
+"""Qt owns rendering/routing; production capture reports into one bounded mailbox."""
+import time
+from PySide6.QtCore import QTimer
+from PySide6.QtGui import QShortcut,QKeySequence
+from PySide6.QtWidgets import QHBoxLayout,QComboBox,QCheckBox,QLabel
+from .dual_window import DualLiveWindow
+from .music_adapter import MusicLightingAdapter
+from .music_runtime import MusicRuntime
+from .widgets.common import Panel,button,text,slider
+
+
+class MusicLiveWindow(DualLiveWindow):
+    def __init__(self, workspace_path=None, worker_factory=None, hue_factory=None, hue_identity=None, engine_factory=None):
+        adapter=MusicLightingAdapter(worker_factory=worker_factory,hue_factory=hue_factory,hue_identity=hue_identity)
+        super().__init__(workspace_path=workspace_path,adapter=adapter)
+        self.runtime=MusicRuntime(engine_factory)
+        self.setWindowTitle('Olive RGB Studio · LIVE Manual / Music')
+        self.mode_badge.setText('LIVE · MANUAL / MUSIC')
+        self.reactor.live=True;self.reactor.live_frame=None
+        self.reactor.setAccessibleName('Live measured band proportions and RMS level')
+        self.reactor.setToolTip('Production analysis: normalized bass/mids/treble, raw RMS. No synthetic waveform or FFT bins.')
+        self.pause.hide()  # The DEMO pause control has no LIVE meaning; Stop is persistent.
+        for label in self.reactor.parentWidget().findChildren(QLabel):
+            if label.text()=='DEMO':label.setText('LIVE AUDIO')
+        self.music_start=button('Start Music',self.start_music)
+        self.music_stop=button('Stop Music',self.stop_music)
+        self.music_status=text('Audio stopped · default Windows output loopback','muted');self.music_status.setWordWrap(True)
+        row=QHBoxLayout();row.addWidget(self.music_status,1);row.addWidget(self.music_start);row.addWidget(self.music_stop)
+        self.centralWidget().layout().insertLayout(4,row)
+        panel=Panel('LIVE MUSIC')
+        note=text('Captures the Windows default output. Change output in Windows; the existing engine follows it. Stop / Esc releases music ownership.','muted');note.setWordWrap(True);panel.box.addWidget(note)
+        self.profile=QComboBox();self.profile.addItems(['Smooth','Reactive','Hyperpop','MGK']);self.profile.setCurrentText('Reactive');panel.box.addWidget(text('Production response profile'));panel.box.addWidget(self.profile)
+        self.palette=QComboBox();self.palette.addItems(['Default','The Weeknd — After Hours','The Weeknd — Dawn FM','The Weeknd — Starboy','Charli xcx — BRAT','Charli xcx — Crash']);panel.box.addWidget(text('Production palette'));panel.box.addWidget(self.palette)
+        self.sensitivity=slider(100,high=300);self.sensitivity.setMinimum(25)
+        self.smoothing=slider(100,high=140);self.smoothing.setMinimum(25)
+        for name,widget in [('Sensitivity multiplier (%)',self.sensitivity),('Smoothing multiplier (%)',self.smoothing)]:
+            widget.setAccessibleName(name);panel.box.addWidget(text(name));panel.box.addWidget(widget)
+        self.harmony=QComboBox();self.harmony.addItems(['Coordinated Colors','Same Color']);panel.box.addWidget(text('Production color relationship'));panel.box.addWidget(self.harmony)
+        for combo in (self.profile,self.palette,self.harmony):
+            combo.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
+            combo.setMinimumContentsLength(12)
+            combo.currentTextChanged.connect(combo.setToolTip);combo.setToolTip(combo.currentText())
+        self.participate={}
+        for key in ('Corner','Hue'):
+            check=QCheckBox(key+' participates in Music');check.setChecked(True)
+            check.toggled.connect(lambda enabled,key=key:self.participation(key,enabled));panel.box.addWidget(check);self.participate[key]=check
+        note=text('Music owns color only for participating connected devices. Local power/brightness remain effective; Follow Master ON additionally applies Master power/brightness. Opt out to edit manual color.','muted');note.setWordWrap(True);panel.box.addWidget(note)
+        self.pages.widget(1).widget().layout().insertWidget(1,panel)
+        self.master.modes['Music'].clicked.connect(self.start_music)
+        self.master.modes['Manual'].clicked.connect(self.stop_music)
+        self.stop_shortcut=QShortcut(QKeySequence('Esc'),self);self.stop_shortcut.activated.connect(self.stop_music)
+        self.music_timer=QTimer(self);self.music_timer.setInterval(33);self.music_timer.timeout.connect(self.poll_music)
+        self.live_controls()
+
+    def start_music(self):
+        if self._closing or self.runtime.busy:return
+        if self.runtime.start(self.profile.currentText(),self.sensitivity.value()/100,self.smoothing.value()/100,self.palette.currentText()):
+            self.music_timer.start()
+            self.c.adapter.start_music(self.harmony.currentText());self.c.state.mode='Music';self.c.changed.emit()
+        self.live_controls()
+
+    def stop_music(self):
+        if not hasattr(self,'runtime'):return
+        self.runtime.stop();self.c.adapter.stop_music();self.c.state.mode='Manual';self.c.changed.emit()
+        self.reactor.live_frame=None;self.reactor.update()
+        self.music_status.setText('Stopping audio…' if self.runtime.busy else 'Audio stopped · manual control restored')
+        self.live_controls()
+
+    def participation(self,key,enabled):self.c.adapter.set_participation(key,enabled);self.live_controls()
+
+    def poll_music(self):
+        frame,message,error,wanted=self.runtime.take()
+        if self._closing:
+            if not self.runtime.busy and self._cleanup_done:self.close()
+            return
+        if (error and self.music_status.text()!=error) or (self.c.adapter.music_active and not wanted):
+            self.c.adapter.stop_music();self.c.state.mode='Manual';self.c.changed.emit()
+            self.music_status.setText(error or 'Audio stopped · manual control restored')
+            self.reactor.live_frame=None;self.reactor.update()
+        elif frame is not None and self.c.adapter.music_active:
+            self.c.adapter.apply_frame(frame)
+            self.reactor.live_frame=frame;self.reactor.update()
+            self.music_status.setText(f'LIVE · RMS {frame.energy:.4f} · '+('BEAT · ' if frame.beat else '')+'RGB #'+''.join(f'{c:02X}' for c in frame.rgb))
+        elif wanted and self.c.adapter.last_frame is None:self.music_status.setText(message)
+        elif wanted and time.monotonic()-self.c.adapter.last_frame.timestamp>1:
+            self.music_status.setText('Waiting for fresh audio data · Stop remains available')
+            self.reactor.live_frame=None;self.reactor.update()
+        self.live_controls()
+        if not self.runtime.busy and not self.c.adapter.music_active:
+            if not error and self.music_status.text()=='Stopping audio…':self.music_status.setText('Audio stopped · manual control restored')
+            self.music_timer.stop()
+
+    def live_controls(self):
+        super().live_controls()
+        if not hasattr(self,'runtime'):return
+        a=self.c.adapter;active=a.music_active
+        self.music_start.setEnabled(not self._closing and not self.runtime.busy)
+        self.music_stop.setEnabled(not self._closing and (active or self.runtime.busy))
+        self.master.modes['Music'].setEnabled(not self._closing and not self.runtime.busy)
+        for widget in (self.profile,self.palette,self.sensitivity,self.smoothing,self.harmony):widget.setEnabled(not self.runtime.busy and not self._closing)
+        selected=self.c.state.selected_channel
+        if a.owns(selected):
+            self.inspector.tabs.widget(0).setEnabled(False)
+            self.inspector.status.setText('LIVE · connected · Music owns color')
+        for key,check in self.participate.items():check.setEnabled(not self._closing)
+
+    def tick(self):self.timer.stop()  # LIVE never invokes the synthetic animation engine.
+
+    def closeEvent(self,event):
+        if hasattr(self,'runtime'):
+            self.runtime.stop();self.c.adapter.music_active=False
+            if self.runtime.busy:self.music_timer.start()
+            if self._cleanup_done and self.runtime.busy:event.ignore();return
+        super().closeEvent(event)
+        if hasattr(self,'music_timer') and self._cleanup_done and not self.runtime.busy:self.music_timer.stop()

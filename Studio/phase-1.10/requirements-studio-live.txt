@@ -1,0 +1,8 @@
+-r requirements-studio-qt.txt
+# Exact versions audited in the existing working Python environment.
+lotus-lamp==1.1.0
+bleak==3.0.2
+HueBLE==2.2.3
+bleak-retry-connector==4.7.1
+numpy==2.5.3
+soundcard==0.4.6

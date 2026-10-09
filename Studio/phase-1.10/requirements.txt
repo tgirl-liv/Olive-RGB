@@ -1,0 +1,15 @@
+numpy
+soundcard
+mss
+lotus-lamp
+Pillow>=10
+winrt-runtime>=3.2; sys_platform == "win32"
+winrt-Windows.Media.Control>=3.2; sys_platform == "win32"
+winrt-Windows.Storage.Streams>=3.2; sys_platform == "win32"
+winrt-Windows.Foundation>=3.2; sys_platform == "win32"
+winrt-Windows.Foundation.Collections>=3.2; sys_platform == "win32"
+
+bleak>=0.22
+
+HueBLE==2.2.3
+bleak-retry-connector==4.7.1

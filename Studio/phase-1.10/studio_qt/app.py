@@ -1,0 +1,193 @@
+import time
+from PySide6.QtCore import Qt,QTimer,QSize,Slot
+from PySide6.QtGui import QKeySequence,QShortcut
+from PySide6.QtWidgets import QApplication,QMainWindow,QWidget,QVBoxLayout,QHBoxLayout,QGridLayout,QSplitter,QStackedWidget,QFrame,QComboBox,QLabel
+from studio_ui.state import NAVIGATION,SCENES
+from .theme import QSS,FRAME_MS
+from .controller import StudioController
+from .workspace import Workspace, WorkspaceStore, WorkspaceSplitter, visible_geometry, default_path
+from .widgets.icons import icon
+from .backend_adapter import AudioMeters
+from .widgets.common import Panel,text,button,scroll,assign
+from .widgets.controls import MasterBus,DeviceChannel
+from .widgets.audio_reactor import AudioReactor
+from .widgets.scene_pad import ScenePad
+from .widgets.inspector import Inspector
+
+
+class ScenePanel(Panel):
+    def __init__(self,c):
+        super().__init__('SCENE LAUNCH PADS');self.c=c;self.columns=0
+        self.favorite=button('Favorites',lambda b:c.set('favorites_only',b),True);self.favorite.setIcon(icon('Favorite'));self.header.addWidget(self.favorite)
+        self.grid=QGridLayout();self.grid.setSpacing(10);self.box.addLayout(self.grid)
+        self.cards=[ScenePad(name,c) for name in SCENES]
+        self.status=text('','muted');self.status.setWordWrap(True);self.box.addWidget(self.status)
+        c.changed.connect(self.refresh);c.output_changed.connect(self.progress);self.refresh()
+    def resizeEvent(self,event):super().resizeEvent(event);self.refresh()
+    def refresh(self):
+        assign(self.favorite,self.c.state.favorites_only)
+        columns=4 if self.width()>=650 else 2
+        for card in self.cards:self.grid.removeWidget(card)
+        visible=[card for card in self.cards if not self.c.state.favorites_only or card.name in self.c.state.favorites]
+        for card in self.cards:card.setVisible(card in visible)
+        for i,card in enumerate(visible):self.grid.addWidget(card,i//columns,i%columns)
+        for col in range(4):self.grid.setColumnStretch(col,1 if col<columns else 0)
+        self.columns=columns;self.progress()
+    def progress(self):
+        c=self.c
+        if getattr(c.adapter,'live',False):
+            self.status.setText('Unavailable in LIVE · use DEMO for scenes');return
+        self.status.setText(f'{c.state.scene} · '+(f'Transition {c.transition_progress:.0%}' if c.transition else f'{c.state.transition_seconds:g}s {c.state.transition_curve.lower()} · mock output'))
+
+
+class StudioWindow(QMainWindow):
+    def __init__(self,workspace_path=None,adapter=None,state=None):
+        super().__init__();self.setWindowTitle('Olive RGB Studio · Qt Preview · DEMO');self.resize(1440,900);self.setMinimumSize(800,600)
+        self.store=WorkspaceStore(workspace_path);self.workspace=self.store.load();self._restoring=True
+        self.setStyleSheet(QSS);self.c=StudioController(parent=self,adapter=adapter,state=state);self.last_tick=time.monotonic()
+        shell=QWidget();shell.setObjectName('shell');self.setCentralWidget(shell);root=QVBoxLayout(shell);root.setContentsMargins(12,12,12,12)
+        header=QHBoxLayout();brand=QLabel();brand.setPixmap(icon('Logo').pixmap(QSize(28,28)));brand.setFixedSize(40,40);brand.setAlignment(Qt.AlignmentFlag.AlignCenter);brand.setObjectName('brandMark');header.addWidget(brand);header.addWidget(text('OLIVE <span style="color:#ef72eb">RGB</span>','title'));header.addWidget(text('MUSIC STUDIO','muted'));header.addStretch();self.mode_badge=text('DEMO · QT PREVIEW','demo');header.addWidget(self.mode_badge);root.addLayout(header)
+        toolbar=QHBoxLayout();self.workspace_toolbar=toolbar;toolbar.addWidget(text('Workspace','muted'))
+        self.preset=QComboBox();self.preset.addItems(['Studio','Music','Compact']);self.preset.setAccessibleName('Workspace preset');toolbar.addWidget(self.preset)
+        self.sidebar_toggle=button('Sidebar',lambda:self.toggle_sidebar(),True);self.sidebar_toggle.setToolTip('Expand/collapse sidebar · Ctrl+B');toolbar.addWidget(self.sidebar_toggle)
+        self.inspector_toggle=button('Inspector',lambda:self.toggle_inspector(),True);self.inspector_toggle.setToolTip('Show/hide inspector · Ctrl+I');toolbar.addWidget(self.inspector_toggle)
+        toolbar.addStretch();self.reset_button=button('Reset layout',self.reset_workspace);toolbar.addWidget(self.reset_button);root.addLayout(toolbar)
+        self.workspace_notice=text(self.store.error,'muted');self.workspace_notice.setWordWrap(True);self.workspace_notice.setVisible(bool(self.store.error));root.addWidget(self.workspace_notice)
+        QShortcut(QKeySequence('Ctrl+B'),self,activated=self.toggle_sidebar);QShortcut(QKeySequence('Ctrl+I'),self,activated=self.toggle_inspector)
+        body=QHBoxLayout();body.setSpacing(12);root.addLayout(body,1)
+        self.sidebar=QFrame();self.sidebar.setObjectName('sidebar');nav=QVBoxLayout(self.sidebar);nav.setContentsMargins(6,12,6,10)
+        self.nav={}
+        for i,page in enumerate(NAVIGATION):
+            b=button(page,lambda checked=False,page=page:self.c.navigate(page),True);b.setObjectName('nav');b.setMinimumHeight(43);nav.addWidget(b);self.nav[page]=b;b.setIcon(icon(page));b.setIconSize(QSize(22,22))
+            QShortcut(QKeySequence(f'Alt+{i+1}'),self,activated=lambda page=page:self.c.navigate(page))
+        nav.addStretch();self.demo=text('Mock devices','muted');nav.addWidget(self.demo);body.addWidget(self.sidebar)
+        self.splitter=WorkspaceSplitter(Qt.Orientation.Horizontal);self.splitter.setHandleWidth(8);self.splitter.setChildrenCollapsible(False);body.addWidget(self.splitter,1)
+        self.pages=QStackedWidget();self.pages.setMinimumWidth(345);self.splitter.addWidget(self.pages)
+        dashboard=QWidget();db=QVBoxLayout(dashboard);self.dashboard_layout=db;db.setContentsMargins(0,0,4,0);db.setSpacing(12)
+        self.master=MasterBus(self.c);db.addWidget(self.master)
+        audio=Panel('AUDIO REACTOR');self.audio_panel=audio;self.pause=button('Pause',lambda:self.c.set('playing',not self.c.state.playing));audio.header.addWidget(self.pause)
+        audio.header.addWidget(text('DEMO','demo'))
+        self.reactor=AudioReactor();audio.box.addWidget(self.reactor);db.addWidget(audio)
+        self.scenes=ScenePanel(self.c);db.addWidget(self.scenes)
+        channels=Panel('DEVICE CHANNELS','DEMO');self.channel_panel=channels;self.channels={}
+        for key in self.c.state.channels:self.channels[key]=DeviceChannel(self.c,key);channels.box.addWidget(self.channels[key])
+        db.addWidget(channels);db.addStretch();self.pages.addWidget(scroll(dashboard))
+        for page in NAVIGATION[1:]:
+            panel=Panel(page.upper())
+            if page=='Scenes':panel.box.addWidget(ScenePanel(self.c))
+            elif page=='Devices':
+                for key in self.c.state.channels:panel.box.addWidget(DeviceChannel(self.c,key))
+            else:
+                note=text(f'{page} workspace preview. Use the inspector for mock color, music and transition settings. No live connections are available.','muted');note.setWordWrap(True);panel.box.addWidget(note)
+                panel.box.addWidget(button('Open '+('Music' if page=='Music' else 'Setup')+' inspector',lambda checked=False,page=page:self.open_tab('Music' if page=='Music' else 'Setup')))
+            panel.box.addStretch();self.pages.addWidget(scroll(panel))
+        self.inspector=Inspector(self.c);self.inspector.setMinimumWidth(260);self.inspector_scroll=scroll(self.inspector);self.inspector_scroll.setMinimumWidth(280);self.splitter.addWidget(self.inspector_scroll)
+        self.splitter.setSizes([1000,330]);self.splitter.setStretchFactor(0,1);self.splitter.setStretchFactor(1,0)
+        self.c.adapter.device_status.connect(self.inspector.receive_status, Qt.ConnectionType.QueuedConnection)
+        self.c.adapter.audio_meters.connect(self.receive_meters, Qt.ConnectionType.QueuedConnection)
+        self.c.adapter.discover_devices()
+        self.last_meters=None
+        self.timer=QTimer(self);self.timer.setInterval(FRAME_MS);self.timer.timeout.connect(self.tick)
+        self.c.changed.connect(self.sync);self.c.output_changed.connect(self.refresh_timer)
+        self.pages.widget(0).verticalScrollBar().valueChanged.connect(self.refresh_timer)
+        self.preset.currentTextChanged.connect(self.apply_preset)
+        self.splitter.splitterMoved.connect(self.remember_splitter)
+        self.apply_preset(self.workspace.preset,restoring=True)
+        self.setGeometry(visible_geometry(self.workspace.geometry)) if workspace_path is not None else None
+        self.update_sidebar();self.inspector_scroll.setVisible(not self.workspace.inspector_collapsed)
+        self.splitter.setSizes(list(self.workspace.splitter_sizes));self._restoring=False
+        self.sync()
+    def open_tab(self,tab):self.c.state.select_inspector(tab);self.c.changed.emit()
+    def sync(self):
+        s=self.c.state;self.pages.setCurrentIndex(NAVIGATION.index(s.page))
+        for page,b in self.nav.items():assign(b,page==s.page)
+        self.pause.setText('Pause' if s.playing else 'Play')
+        if not s.motion:self.c.advance(time.monotonic())
+        self.refresh_timer()
+    def resizeEvent(self,event):
+        super().resizeEvent(event)
+        if not hasattr(self,'sidebar'):return
+        self.update_sidebar()
+    def update_sidebar(self):
+        compact=self.workspace.sidebar_collapsed or self.width()<1100
+        self.sidebar.setFixedWidth(56 if compact else 140);self.demo.setVisible(not compact)
+        for page,b in self.nav.items():b.setText('' if compact else page)
+        assign(self.sidebar_toggle,not self.workspace.sidebar_collapsed)
+        assign(self.inspector_toggle,not self.workspace.inspector_collapsed)
+    def toggle_sidebar(self):
+        self.workspace.sidebar_collapsed=not self.workspace.sidebar_collapsed;self.update_sidebar()
+    def toggle_inspector(self):
+        if not self.workspace.inspector_collapsed:self.remember_splitter()
+        self.workspace.inspector_collapsed=not self.workspace.inspector_collapsed
+        self.inspector_scroll.setVisible(not self.workspace.inspector_collapsed)
+        if not self.workspace.inspector_collapsed:self.splitter.setSizes(list(self.workspace.splitter_sizes))
+        self.update_sidebar()
+    def remember_splitter(self,*args):
+        if not self._restoring and not self.workspace.inspector_collapsed:
+            sizes=self.splitter.sizes()
+            if all(x>0 for x in sizes):self.workspace.splitter_sizes=tuple(sizes)
+    def apply_preset(self,name,restoring=False):
+        self.workspace.preset=name;assign(self.preset,name)
+        music=name=='Music';compact=name=='Compact'
+        self.reactor.setMinimumHeight(300 if music else 130 if compact else 165)
+        for card in self.scenes.cards:card.setFixedHeight(84 if music or compact else 92)
+        panels=[self.master,self.audio_panel,self.scenes,self.channel_panel]
+        for panel in panels:self.dashboard_layout.removeWidget(panel)
+        order=[self.master,self.channel_panel,self.audio_panel,self.scenes] if compact else [self.master,self.audio_panel,self.channel_panel,self.scenes] if music else panels
+        for i,panel in enumerate(order):self.dashboard_layout.insertWidget(i,panel)
+        self.dashboard_layout.setSpacing(12 if music else 8)
+        if not restoring:
+            self.workspace.sidebar_collapsed=compact;self.workspace.inspector_collapsed=music or compact
+            self.workspace.splitter_sizes=(900,330)
+            self.inspector_scroll.setVisible(not self.workspace.inspector_collapsed)
+            self.splitter.setSizes(list(self.workspace.splitter_sizes))
+        self.update_sidebar();self.refresh_timer()
+    def reset_workspace(self):
+        self.workspace=Workspace();self.apply_preset('Studio');self.setGeometry(visible_geometry(None));self.save_workspace()
+    def save_workspace(self):
+        self.remember_splitter();r=self.normalGeometry() if self.isMaximized() else self.geometry()
+        self.workspace.geometry=(r.x(),r.y(),r.width(),r.height())
+        okay=self.store.save(self.workspace)
+        self.workspace_notice.setText(self.store.error);self.workspace_notice.setVisible(bool(self.store.error))
+        return okay
+    @Slot(object)
+    def receive_meters(self,meters):
+        if not self.c.adapter.closed:
+            self.last_meters=meters
+            self.reactor.meter_values=[meters.bass,meters.mids,meters.treble,meters.level]
+            if self.reactor.isVisible():self.reactor.update()
+
+    def refresh_timer(self):
+        if not hasattr(self,"timer"):return
+        s=self.c.state
+        animating=(s.motion and s.playing and s.master_power and s.mode=="Music" and s.page=="Studio" and not self.reactor.visibleRegion().isEmpty())
+        needed=self.isVisible() and not self.isMinimized() and not self.c.adapter.closed and (animating or self.c.transition is not None)
+        if needed and not self.timer.isActive():self.last_tick=time.monotonic();self.timer.start()
+        elif not needed:self.timer.stop()
+
+    def changeEvent(self,event):
+        super().changeEvent(event);self.refresh_timer()
+
+    def tick(self):
+        now=time.monotonic();dt=now-self.last_tick;self.last_tick=now;self.c.advance(now)
+        s=self.c.state
+        if s.motion and s.playing and s.master_power and s.mode=='Music' and not self.isMinimized() and not self.reactor.visibleRegion().isEmpty():
+            self.reactor.advance(dt,playing=True,intensity=s.master_brightness)
+            bands=[sum(self.reactor.levels[i:i+24])/24 for i in (0,24,48)]
+            self.c.adapter.publish_demo_meters(AudioMeters(*bands,sum(bands)/3))
+        self.refresh_timer()
+    def showEvent(self,event):super().showEvent(event);self.last_tick=time.monotonic();self.timer.start()
+    def hideEvent(self,event):self.timer.stop();super().hideEvent(event)
+    def closeEvent(self,event):self.save_workspace();self.timer.stop();self.c.transition=None;self.c.adapter.close();super().closeEvent(event)
+
+
+def main():
+    app=QApplication.instance() or QApplication([]);app.setStyle('Fusion')
+    from .live_window import choose_startup_mode,LiveStudioWindow
+    mode=choose_startup_mode()
+    if mode is None:return 0
+    if mode=='LIVE':
+        from .music_window import MusicLiveWindow
+        window=MusicLiveWindow(workspace_path=default_path())
+    else:window=StudioWindow(workspace_path=default_path())
+    window.show();return app.exec()
