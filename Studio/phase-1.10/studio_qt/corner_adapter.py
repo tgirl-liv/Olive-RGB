@@ -1,5 +1,6 @@
 """LIVE manual Corner Lamp adapter. Hue/scenes/audio are not integrated."""
-from PySide6.QtCore import QObject,Signal,Slot,Qt
+import queue
+from PySide6.QtCore import QObject,Signal,Slot,Qt,QTimer
 from studio_ui.state import StudioState
 from .backend_adapter import MockLightingAdapter,DeviceStatus
 from .corner_session import CornerSession
@@ -22,9 +23,35 @@ class CornerLampAdapter(QObject):
         self.status='disconnected';self.message='Disconnected · press Connect Corner Lamp'
         self._model=MockLightingAdapter(self.state,self);self.commands=self._model.commands
         self._last_nonzero=self.state.channels['Corner'].color
-        self.session=CornerSession(self._incoming.emit,self._stopped.emit,worker_factory)
+        # Lifecycle callbacks must not retain Qt signals: QObject destruction can
+        # precede the lifecycle thread's final callback, even after BLE has exited.
+        notifications=queue.SimpleQueue()
+        self._notifications=notifications
+        self._completion_pending=False
+        self.session=CornerSession(notifications.put,lambda:notifications.put(None),worker_factory)
+        session=self.session
+        self.destroyed.connect(lambda *_:session.close())
         self._incoming.connect(self._receive,Qt.ConnectionType.QueuedConnection)
         self._stopped.connect(self.finished,Qt.ConnectionType.QueuedConnection)
+        self._notification_timer=QTimer(self)
+        self._notification_timer.setInterval(25)
+        self._notification_timer.timeout.connect(self._drain_notifications)
+        self._notification_timer.start()
+
+    @Slot()
+    def _drain_notifications(self):
+        # Runs only on the owning Qt thread; deleting the adapter also deletes
+        # this timer. The pure-Python mailbox remains safe for late callbacks.
+        while True:
+            try:event=self._notifications.get_nowait()
+            except queue.Empty:break
+            if event is None:self._completion_pending=True
+            else:self._incoming.emit(event)
+        thread=self.session.thread
+        if self._completion_pending and (thread is None or not thread.is_alive()):
+            self._completion_pending=False
+            self._notification_timer.stop()
+            self._stopped.emit()
 
     @Slot(object)
     def _receive(self,event):

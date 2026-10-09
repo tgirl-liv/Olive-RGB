@@ -2,7 +2,7 @@
 Run in the existing BLE Python environment with PySide6 installed/available.
 No real BleakClient is constructed and no BLE scan is performed.
 """
-import ast,asyncio,time,unittest
+import ast,asyncio,threading,time,unittest
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -49,10 +49,12 @@ class LiveTests(unittest.TestCase):
         cls.app=QApplication.instance() or QApplication([]);cls.app.setQuitOnLastWindowClosed(False)
     def setUp(self):
         self.lamps=[];self.workers=[];self.adapters=[];self.windows=[]
+        self.thread_errors=[]
         def factory(status,log):
             worker=corner_worker.BluetoothWorker(status,log);self.workers.append(worker);return worker
         self.factory=factory
-        self.patches=[patch.object(corner_worker,'LotusLamp',self.make_lamp),patch.object(corner_worker.BluetoothWorker,'_debug',lambda *args:None)]
+        self.patches=[patch.object(corner_worker,'LotusLamp',self.make_lamp),patch.object(corner_worker.BluetoothWorker,'_debug',lambda *args:None),
+                      patch.object(threading,'excepthook',lambda error:self.thread_errors.append(error.exc_value))]
         for p in self.patches:p.start()
         self.settings={}
     def make_lamp(self,**kwargs):
@@ -71,13 +73,18 @@ class LiveTests(unittest.TestCase):
         self.fail('Timed out waiting for condition')
     def connect(self,a):a.connect_corner();self.wait(lambda:a.connected)
     def tearDown(self):
-        for window in self.windows:window.close()
-        for adapter in self.adapters:adapter.close()
-        self.wait(lambda:all(not w.thread.is_alive() for w in self.workers),timeout=5000)
-        self.app.processEvents()
-        for lamp in self.lamps:self.assertEqual(lamp.disconnect_overlaps,0)
-        for window in self.windows:window.deleteLater()
-        for p in reversed(self.patches):p.stop()
+        try:
+            for window in self.windows:window.close()
+            for adapter in self.adapters:adapter.close()
+            self.wait(lambda:all(not w.thread.is_alive() for w in self.workers)
+                      and all(a.session.thread is None or not a.session.thread.is_alive() for a in self.adapters)
+                      and all(w._cleanup_done for w in self.windows),timeout=5000)
+            self.app.processEvents()
+            for lamp in self.lamps:self.assertEqual(lamp.disconnect_overlaps,0)
+            self.assertEqual(self.thread_errors,[], 'Uncaught lifecycle/worker exception')
+            for window in self.windows:window.deleteLater()
+        finally:
+            for p in reversed(self.patches):p.stop()
     def test_worker_class_exactly_preserved(self):
         root=Path(__file__).parent
         def worker(path):return next(n for n in ast.parse(path.read_text(encoding='utf-8')).body if isinstance(n,ast.ClassDef) and n.name=='BluetoothWorker')
