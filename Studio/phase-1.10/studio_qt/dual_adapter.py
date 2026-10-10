@@ -20,6 +20,7 @@ class DualLightingAdapter(CornerLampAdapter):
         self.hue_identity = dict(hue_identity or {'name': 'Tv lamp'})
         self.hue_observed = {}
         self._hue_color_set = False
+        self.hue_mode='color';self.hue_temperature=300
         self._corner_done = self._hue_done = False
         self.state.channels['Hue'].follow = False
         self.hue = HueSession(self._hue_incoming.emit, self._hue_stopped.emit, hue_factory, hue_identity)
@@ -57,6 +58,23 @@ class DualLightingAdapter(CornerLampAdapter):
         self.state_observed.emit()
         self.request_status()
 
+    def set_hue_identity(self, identity):
+        from .hue_identity import validate_identity
+        identity=validate_identity(identity)
+        self.disconnect_hue()  # invalidates generation and pending commands
+        with self.hue.lock:self.hue.identity=dict(identity)
+        self.hue_identity=dict(identity)
+
+    def set_hue_mode(self, mode, temperature=None):
+        if mode not in ('color','temperature'):raise ValueError('Invalid Hue mode')
+        if hasattr(self,'owns') and self.owns('Hue'):raise ValueError('Stop the effect or release Hue ownership first')
+        self._require(mode)
+        if temperature is not None:
+            if type(temperature) is not int or not 153<=temperature<=500:raise ValueError('Invalid Hue temperature')
+            self.hue_temperature=temperature
+        self.hue_mode=mode
+        self._queue_hue(color=True)
+
     def connect_hue(self):
         if self.closed or self.hue.closed or self.hue.wanted:return
         self.hue_error = '';self.hue_observed = {};self._hue_color_set = False
@@ -81,16 +99,17 @@ class DualLightingAdapter(CornerLampAdapter):
         if self.closed or not self.hue_connected:return
         channel = self.state.channels['Hue']
         rgb = tuple(int(channel.color[i:i+2], 16) for i in (1,3,5))
-        intensity = max(rgb) / 255 if self._hue_color_set else 1.
+        intensity = max(rgb) / 255 if self._hue_color_set and self.hue_mode=='color' else 1.
         brightness = channel.brightness * (self.state.master_brightness if channel.follow else 1.) * intensity
         power = channel.power and (self.state.master_power or not channel.follow) and brightness > 0
         values = dict(power=bool(power), brightness=max(1, min(254, round(brightness * 254))))
-        if color:values['color'] = rgb  # Unscaled chromaticity; intensity applied once above.
+        if self.hue_mode=='temperature':values['temperature']=self.hue_temperature
+        elif color:values['color'] = rgb  # Unscaled chromaticity; intensity applied once above.
         self.hue.update(values)
 
     def set_rgb(self, device_id, color):
         if device_id != 'Hue':return super().set_rgb(device_id, color)
-        self._require('color');self._model.set_rgb(device_id, color);self._hue_color_set = True;self._queue_hue(color=True)
+        self._require('color');self._model.set_rgb(device_id, color);self.hue_mode='color';self._hue_color_set = True;self._queue_hue(color=True)
 
     def set_brightness(self, device_id, brightness):
         if device_id != 'Hue':return super().set_brightness(device_id, brightness)

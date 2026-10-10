@@ -19,7 +19,7 @@ def default_path():
 
 
 def defaults(mode):
-    result = {'master': {'power': True, 'brightness': .8},
+    result = {'appearance':{'theme':'Studio'},'master': {'power': True, 'brightness': .8},
             'devices': {key: {'power': True, 'brightness': .8, 'color': color,
                              'follow': key != 'Hue' or mode == 'demo'}
                         for key, color in (('Corner', '#F32E83'), ('Hue', '#7927DB'))},
@@ -30,6 +30,7 @@ def defaults(mode):
                       'participation': {'Corner': True, 'Hue': True}}}
     if mode == 'live':result['music'].update(color_source='Preset',custom_theme_id=None,output_brightness=1.,output_saturation=1.)
     if mode == 'live':result['controller']={'family':LOTUS,'identity':identity_for(LOTUS)}
+    if mode == 'live':result['hue']={'identity':None,'mode':'color','temperature':300}
     if mode == 'live':result['screen']={'monitor':1,'intensity':1.,'saturation':1.25}
     return result
 
@@ -37,6 +38,15 @@ def defaults(mode):
 def validate(data, mode):
     """Reject malformed values; fill missing v1 fields for forward additions."""
     def merge(template, supplied, key=''):
+        if key=='identity':
+            from .hue_identity import validate_identity
+            return None if supplied is None else validate_identity(supplied)
+        if key=='temperature':
+            if type(supplied) is not int or not 153<=supplied<=500:raise ValueError('Invalid Hue temperature')
+            return supplied
+        if key=='mode':
+            if supplied not in ('color','temperature'):raise ValueError('Invalid Hue mode')
+            return supplied
         if key=='controller':
             if not isinstance(supplied,dict):raise ValueError('Invalid controller')
             family=supplied.get('family',LOTUS);identity=identity_for(family)
@@ -57,6 +67,7 @@ def validate(data, mode):
                 low, high = .25, (3. if key == 'sensitivity' else 1.4)
             valid = type(supplied) in (int, float) and low <= supplied <= high and math.isfinite(supplied)
         elif key == 'color':valid = isinstance(supplied, str) and re.fullmatch(r'#[0-9a-fA-F]{6}', supplied)
+        elif key == 'theme':valid = supplied in ('Studio','Tickets','Sakura','Blackout','Cyberpunk')
         elif key == 'profile':valid = supplied in PROFILES
         elif key == 'palette':valid = supplied in PALETTES
         elif key == 'color_source':valid = supplied in ('Preset', 'Album artwork')
@@ -126,7 +137,7 @@ def restore(state, values):
     state.mode = 'Manual';state.playing = False
 
 
-def snapshot(state, music):
-    return {'master': {'power': state.master_power, 'brightness': state.master_brightness},
+def snapshot(state, music, appearance=None):
+    return {'appearance':copy.deepcopy(appearance or {'theme':'Studio'}),'master': {'power': state.master_power, 'brightness': state.master_brightness},
             'devices': {key: {name: getattr(channel, name) for name in ('power', 'brightness', 'color', 'follow')}
                         for key, channel in state.channels.items()}, 'music': copy.deepcopy(music)}

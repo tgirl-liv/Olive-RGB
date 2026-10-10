@@ -46,7 +46,7 @@ class ScreenLightingAdapter(MusicLightingAdapter):
             # Hue opted out of Screen by disabling Follow Master.
             if self.screen_active:
                 with self.hue.lock:self.hue.pending={}
-                DualLightingAdapter._queue_hue(self,color)
+                DualLightingAdapter._queue_hue(self,color=True)
             else:super()._queue_hue(color)
 
     def set_rgb(self,key,color):

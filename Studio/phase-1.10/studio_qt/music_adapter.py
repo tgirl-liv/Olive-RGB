@@ -90,7 +90,7 @@ class MusicLightingAdapter(DualLightingAdapter):
         elif self.hue_connected:
             # Replace the complete latest state; old music fields cannot linger.
             with self.hue.lock:self.hue.pending = {}
-            super()._queue_hue(color=self.hue_caps.get('color',False))
+            super()._queue_hue(color=self.hue_caps.get('color',False) or self.hue_caps.get('temperature',False))
 
     def stop_music(self):
         if not self.music_active:return

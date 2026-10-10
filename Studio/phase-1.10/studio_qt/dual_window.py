@@ -4,12 +4,21 @@ from .live_window import LiveStudioWindow
 from .dual_adapter import DualLightingAdapter
 from .widgets.common import button, text
 from .widgets.controls import DeviceChannel
+from .widgets.hue_preferences import HuePreferences
+from studio_ui.state import NAVIGATION
 
 
 class DualLiveWindow(LiveStudioWindow):
     def __init__(self, workspace_path=None, worker_factory=None, hue_factory=None, hue_identity=None, adapter=None,preferences_path=None):
         adapter = adapter if adapter is not None else DualLightingAdapter(worker_factory=worker_factory, hue_factory=hue_factory, hue_identity=hue_identity)
         super().__init__(workspace_path=workspace_path, adapter=adapter,preferences_path=preferences_path)
+        values=self.preferences['hue']
+        if hue_identity is None and values['identity'] is not None:
+            adapter.hue_identity=dict(values['identity'])
+            with adapter.hue.lock:adapter.hue.identity=dict(values['identity'])
+        adapter.hue_mode=values['mode'];adapter.hue_temperature=values['temperature']
+        self.hue_preferences_panel=HuePreferences(self)
+        self.pages.widget(NAVIGATION.index('Settings')).widget().box.insertWidget(1,self.hue_preferences_panel)
         self.setWindowTitle('Olive RGB Studio · LIVE Bluetooth + Hue · Manual only')
         self.mode_badge.setText('LIVE · MANUAL')
         self.demo.setText('Bluetooth + Hue')
@@ -29,6 +38,10 @@ class DualLiveWindow(LiveStudioWindow):
         adapter.finished.connect(self.live_controls)
         self.live_controls()
 
+    def hue_preferences(self):
+        a=self.c.adapter
+        return {'identity':dict(a.hue_identity) if a.hue.identity is not None else None,'mode':a.hue_mode,'temperature':a.hue_temperature}
+
     def connect_hue(self):self.c.adapter.connect_hue();self.live_controls()
     def disconnect_hue(self):self.c.adapter.disconnect_hue();self.live_controls()
     def closeEvent(self, event):
@@ -40,7 +53,11 @@ class DualLiveWindow(LiveStudioWindow):
         identity = a.hue_identity
         message = a.hue_error if a.hue_status == 'error' else f"{identity.get('name', 'Tv lamp')} · {identity.get('address_hint', 'not connected')}"
         self.hue_status.setText(f'Hue · {a.hue_status} · {message}')
-        self.live_controls()
+        if event is not None and event.kind=='identity':
+            from .widgets.common import assign
+            assign(self.hue_preferences_panel.name,identity.get('name','Tv lamp'))
+            assign(self.hue_preferences_panel.address,identity.get('address_hint',''))
+        self.queue_preferences();self.live_controls()
 
     def live_controls(self):
         super().live_controls()
@@ -76,7 +93,7 @@ class DualLiveWindow(LiveStudioWindow):
             self.inspector.brightness.setEnabled(hue and a.hue_caps.get('brightness', False))
             self.inspector.follow.setEnabled(hue and a.hue_caps.get('power', False))
             self.inspector.power.setToolTip('Hue native power; verified by existing backend')
-            supported = ', '.join(k for k in ('power','brightness','color') if a.hue_caps.get(k)) or 'none verified'
+            supported = ', '.join(k for k in ('power','brightness','color','temperature') if a.hue_caps.get(k)) or 'none verified'
             observed = a.hue_observed
             power = ('on' if observed['power'] else 'off') if 'power' in observed else 'unknown'
             brightness = str(observed.get('brightness', 'unknown'))
@@ -84,6 +101,7 @@ class DualLiveWindow(LiveStudioWindow):
         self.refresh_manual_target()
         self.inspector.live_setup.refresh()
         self.update_inspector_links()
+        if hasattr(self,'hue_preferences_panel'):self.hue_preferences_panel.refresh()
         for i in (0,1,2):
             if self.inspector.tabs.isTabEnabled(i):
                 if not self.inspector.tabs.isTabEnabled(self.inspector.tabs.currentIndex()):self.inspector.tabs.setCurrentIndex(i)

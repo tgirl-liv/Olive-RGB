@@ -23,3 +23,16 @@ def load_hue_identity(path=None):
         return result
     except (ValueError, TypeError, AttributeError) as error:
         raise ValueError(f'Cannot use saved Hue identity: {error}. Production settings were not changed.') from error
+
+
+def validate_identity(identity):
+    """Only the existing BLE driver's identity fields; no bridge credentials."""
+    if not isinstance(identity, dict):raise ValueError('Hue identity must be an object')
+    result = {'name': 'Tv lamp'}
+    for key in ('name', 'address_hint', 'zigbee_address'):
+        if key in identity:
+            value = identity[key]
+            if not isinstance(value, str) or not value.strip() or len(value)>256:
+                raise ValueError('Invalid Hue '+key)
+            result[key] = value.strip()
+    return result

@@ -55,7 +55,10 @@ class HueSession:
 
     def update(self, values):
         with self.lock:
-            if self.wanted and not self.closed:self.pending.update(values)
+            if self.wanted and not self.closed:
+                if 'color' in values:self.pending.pop('temperature',None)
+                if 'temperature' in values:self.pending.pop('color',None)
+                self.pending.update(values)
 
     def close(self):
         with self.lock:
@@ -141,13 +144,15 @@ class HueSession:
                     if not self.driver.connected:raise ConnectionError('Hue connection lost')
                     with self.lock:desired = dict(self.pending)
                     if time.monotonic() - last_write >= self.WRITE_INTERVAL:
-                        fields = ['brightness', 'color']
+                        fields = ['brightness', 'color', 'temperature']
                         keys = ['power'] if desired.get('power') is False else ['power'] + fields[cursor:] + fields[:cursor]
                         for key in keys:
                             if key not in desired or not self.driver.capabilities.get(key) or sent.get(key) == desired[key]:continue
                             value = desired[key]
                             if not await self.operation(self.driver.write(key, value), generation, 6):break
                             sent[key] = value
+                            if key=='color':sent.pop('temperature',None)
+                            if key=='temperature':sent.pop('color',None)
                             last_write = time.monotonic()
                             if key in fields:cursor = (fields.index(key) + 1) % len(fields)
                             break

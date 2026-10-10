@@ -95,6 +95,10 @@ class StudioWindow(QMainWindow):
                 link=button('Open '+target+' inspector',lambda checked=False,target=target:self.open_tab(target))
                 self.inspector_links[page]=(target,link);panel.box.addWidget(link)
             panel.box.addStretch();self.pages.addWidget(scroll(panel))
+        from .widgets.appearance_settings import AppearanceSettings
+        self.appearance_settings=AppearanceSettings(self)
+        self.pages.widget(NAVIGATION.index('Settings')).widget().box.insertWidget(1,self.appearance_settings)
+        self.page_notes['Settings'].setText('Interface themes and status history work in DEMO and LIVE. Qt preferences are separate from original settings; launch stays idle.')
         self.inspector=Inspector(self.c);self.inspector.setMinimumWidth(260);self.inspector_scroll=scroll(self.inspector);self.inspector_scroll.setMinimumWidth(280);self.splitter.addWidget(self.inspector_scroll)
         self.splitter.setSizes([1000,330]);self.splitter.setStretchFactor(0,1);self.splitter.setStretchFactor(1,0)
         self.c.adapter.device_status.connect(self.inspector.receive_status, Qt.ConnectionType.QueuedConnection)
@@ -122,10 +126,12 @@ class StudioWindow(QMainWindow):
     def save_preferences(self):
         self.preferences_timer.stop()
         values=snapshot(self.c.state,self.music_preferences())
+        values['appearance']=dict(self.preferences['appearance'])
         if self.preferences_mode=='live':
             from .device_families import identity_for
             family=self.c.adapter.session.family
             values['controller']={'family':family,'identity':identity_for(family)}
+            values['hue']=self.hue_preferences() if hasattr(self,'hue_preferences') else self.preferences['hue']
             values['screen']=self.screen_preferences() if hasattr(self,'screen_preferences') else self.preferences['screen']
         self.preferences_store.save(self.preferences_mode,values)
         self.preferences_notice.setText(self.preferences_store.error)
@@ -221,7 +227,7 @@ class StudioWindow(QMainWindow):
         self.refresh_timer()
     def showEvent(self,event):super().showEvent(event);self.last_tick=time.monotonic();self.timer.start()
     def hideEvent(self,event):self.timer.stop();super().hideEvent(event)
-    def closeEvent(self,event):self.save_preferences();self.save_workspace();self.timer.stop();self.c.transition=None;self.c.adapter.close();super().closeEvent(event)
+    def closeEvent(self,event):self.appearance_settings.timer.stop();self.save_preferences();self.save_workspace();self.timer.stop();self.c.transition=None;self.c.adapter.close();super().closeEvent(event)
 
 
 def main():

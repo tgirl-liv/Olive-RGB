@@ -6,11 +6,18 @@ import time
 
 
 def rgb_to_xy(rgb):
+    """Convert 8-bit sRGB to device-independent CIE xy (D65).
+
+    Decode sRGB once, then use its own primaries. The former wide-gamut
+    matrix changed chromaticity even for standard sRGB primaries/white.
+    Brightness and bulb-specific gamut handling are separate from this
+    conversion; never assume a bulb gamut or apply a corrective hue offset.
+    """
     channels = [max(0, min(255, int(c))) / 255 for c in rgb]
     r, g, b = [((c + .055) / 1.055) ** 2.4 if c > .04045 else c / 12.92 for c in channels]
-    x = .664511*r + .154324*g + .162028*b
-    y = .283881*r + .668433*g + .047685*b
-    z = .000088*r + .072310*g + .986039*b
+    x = .4124564*r + .3575761*g + .1804375*b
+    y = .2126729*r + .7151522*g + .0721750*b
+    z = .0193339*r + .1191920*g + .9503041*b
     total = x+y+z
     return (x/total, y/total) if total else (.3127, .3290)
 

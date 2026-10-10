@@ -29,10 +29,11 @@ class LiveSetupInspector(QWidget):
         self.capabilities = text('', 'muted');self.capabilities.setWordWrap(True);layout.addWidget(self.capabilities)
         note = text('Capabilities describe the current connection. No connection or scan starts when opening this tab.', 'muted')
         note.setWordWrap(True);layout.addWidget(note)
-        for label in ('Choose another device', 'Color temperature', 'Scene / transition settings'):
+        for label in ('Scene / transition settings',):
             control = button(label);control.setEnabled(False)
             control.setToolTip('Unavailable in the current Qt LIVE controls')
             layout.addWidget(control)
+        layout.addWidget(button('Open Hue target / white controls',lambda:window.c.navigate('Settings')))
         layout.addStretch()
 
     def endpoints(self, key):
@@ -64,7 +65,7 @@ class LiveSetupInspector(QWidget):
                 statuses.append(w.hue_status.text())
                 if a.hue_connected:
                     supported = ', '.join(k for k,v in a.hue_caps.items() if v) or 'none reported'
-                    capabilities.append('Hue reported capabilities: '+supported+'. Qt lighting controls use verified power, brightness and color only.')
+                    capabilities.append('Hue reported capabilities: '+supported+'. Qt lighting controls use verified power, brightness, color and white-temperature controls where supported.')
                 else:capabilities.append('Hue capabilities unknown until connected.')
             else:
                 statuses.append('Hue · unavailable in this window')
