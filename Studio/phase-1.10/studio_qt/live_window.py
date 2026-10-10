@@ -23,6 +23,7 @@ def choose_startup_mode():
 
 
 class LiveStudioWindow(StudioWindow):
+    supported_modes=('Manual',)
     def __init__(self,workspace_path=None,worker_factory=None,adapter=None,preferences_path=None):
         state=adapter.state if adapter is not None else StudioState()
         adapter=adapter if adapter is not None else CornerLampAdapter(state,worker_factory=worker_factory)
@@ -81,7 +82,9 @@ class LiveStudioWindow(StudioWindow):
         self.connect_button.setEnabled(not self._closing and not a.session.wanted and not a.session.closed)
         self.disconnect_button.setEnabled(not self._closing and (a.session.wanted or a.connected))
         self.master.power.setEnabled(enabled and a.software_power);self.master.level.setEnabled(enabled)
-        for name,b in self.master.modes.items():b.setEnabled(name=='Manual' and not self._closing)
+        # Decide availability once for the complete window. Temporarily disabling
+        # a focused mode moves Qt focus and can auto-scroll the whole dashboard.
+        for name,b in self.master.modes.items():b.setEnabled(name in self.supported_modes and not self._closing)
         for row in self.findChildren(DeviceChannel):
             corner=row.key=='Corner';row.power.setEnabled(enabled and corner and a.software_power);row.level.setEnabled(enabled and corner);row.follow.setEnabled(enabled and corner)
             row.select.setToolTip('LIVE '+self.c.state.channels['Corner'].name if corner else 'Philips Hue — not integrated in LIVE')

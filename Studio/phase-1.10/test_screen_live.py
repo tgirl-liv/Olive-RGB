@@ -203,6 +203,64 @@ class ScreenWindowTests(unittest.TestCase):
     def test_screen_navigation_never_starts_capture(self):
         w=self.window();w.c.navigate('Screen')
         self.assertEqual(w.c.state.page,'Screen');self.assertFalse(w.screen_runtime.busy)
+
+    def check_dashboard_position(self,inspector_hidden):
+        from PySide6.QtWidgets import QApplication
+        w=self.window();w.activateWindow();QTest.qWait(100)
+        if w.workspace.inspector_collapsed!=inspector_hidden:w.toggle_inspector()
+        QTest.qWait(100)
+        area=w.pages.widget(0);bar=area.verticalScrollBar()
+        panels=(w.master,w.audio_panel,w.scenes,w.channel_panel)
+        def geometry():
+            return (bar.value(),area.widget().geometry().getRect(),
+                area.viewport().mapTo(w,area.viewport().rect().topLeft()).toTuple(),
+                tuple((p.geometry().getRect(),p.mapTo(area.viewport(),p.rect().topLeft()).toTuple(),p.mapTo(w,p.rect().topLeft()).toTuple()) for p in panels))
+        self.assertGreaterEqual(bar.maximum(),60)
+        for offset in (0,30,60):
+            with self.subTest(inspector_hidden=inspector_hidden,offset=offset):
+                w.c.set('mode','Manual');self.wait(lambda:not w.runtime.busy and not w.screen_runtime.busy)
+                w.nav['Studio'].click();w.nav['Studio'].setFocus();QTest.qWait(30)
+                bar.setValue(offset);QTest.qWait(30);baseline=geometry()
+                outside=(w.sidebar.geometry().getRect(),w.inspector_scroll.geometry().getRect())
+                QTest.mouseClick(w.master.modes['Music'],Qt.MouseButton.LeftButton)
+                self.wait(lambda:w.c.adapter.music_active and w.album.virtual_rgb is not None)
+                QTest.qWait(100)
+                self.assertEqual(geometry(),baseline)
+                self.assertIs(QApplication.focusWidget(),w.master.modes['Music'])
+                thread=w.runtime.thread
+                for _ in range(3):
+                    QTest.mouseClick(w.master.modes['Music'],Qt.MouseButton.LeftButton)
+                    w.c.changed.emit();w.live_controls();QTest.qWait(40)
+                    self.assertEqual(geometry(),baseline);self.assertIs(w.runtime.thread,thread)
+                QTest.mouseClick(w.master.modes['Screen'],Qt.MouseButton.LeftButton)
+                self.wait(lambda:w.screen_preview.virtual_rgb is not None)
+                self.assertFalse(thread.is_alive());self.assertTrue(w.screen_runtime.busy)
+                self.assertEqual(geometry(),baseline)
+                screen_thread=w.screen_runtime.thread
+                for _ in range(3):
+                    w.nav['Studio'].click();QTest.qWait(30)
+                    self.assertEqual(geometry(),baseline)
+                    QTest.mouseClick(w.master.modes['Screen'],Qt.MouseButton.LeftButton)
+                    QTest.qWait(50);self.assertEqual(geometry(),baseline)
+                    self.assertIs(w.screen_runtime.thread,screen_thread)
+                w.nav['Studio'].click();QTest.qWait(30)
+                QTest.mouseClick(w.master.modes['Music'],Qt.MouseButton.LeftButton)
+                self.wait(lambda:w.c.adapter.music_active and w.album.virtual_rgb is not None)
+                self.assertFalse(screen_thread.is_alive());QTest.qWait(100)
+                self.assertEqual(geometry(),baseline)
+                QTest.mouseClick(w.master.modes['Manual'],Qt.MouseButton.LeftButton)
+                self.wait(lambda:not w.runtime.busy and not w.screen_runtime.busy);QTest.qWait(50)
+                self.assertEqual(geometry(),baseline)
+                self.assertEqual((w.sidebar.geometry().getRect(),w.inspector_scroll.geometry().getRect()),outside)
+                # No persistent scroll lock: explicit user scrolling still works.
+                bar.setValue(10);bar.setFocus()
+                QTest.keyClick(bar,Qt.Key.Key_Down);self.assertGreater(bar.value(),10)
+        self.assertFalse(self.f.f.corner.workers);self.assertIsNone(w.c.adapter.hue.thread)
+
+    def test_dashboard_position_with_inspector_visible(self):self.check_dashboard_position(False)
+
+    def test_dashboard_position_with_inspector_hidden(self):self.check_dashboard_position(True)
+
     def test_actual_selector_manual_music_screen_manual_releases_ownership(self):
         from PySide6.QtCore import Qt
         w=self.window();a=w.c.adapter
@@ -289,6 +347,23 @@ class ScreenWindowTests(unittest.TestCase):
         self.assertFalse(w.c.adapter.music_active);self.assertFalse(w.c.adapter.screen_active)
         self.assertIn('Error',w.mode_badge.text());self.assertIn('audio unavailable',w.mode_badge.toolTip())
         self.assertNotIn('Active',w.master.modes['Music'].text())
+
+    def test_music_failure_before_gui_poll_keeps_error_feedback(self):
+        gate=threading.Event()
+        def fail(*args):
+            gate.wait(1);raise OSError('capture failed before GUI poll')
+        w=self.window();w.runtime.factory=fail
+        QTest.mouseClick(w.master.modes['Music'],Qt.MouseButton.LeftButton)
+        # Open through the actual selector, but defer GUI consumption until the
+        # native/lifecycle thread has already reported failure and exited.
+        w.poll_screen();w.music_timer.stop()
+        gate.set()
+        if w.runtime.thread is not None:w.runtime.thread.join(1)
+        w.poll_music()
+        self.assertEqual(w.c.state.mode,'Manual');self.assertFalse(w.c.adapter.music_active)
+        self.assertIn('capture failed before GUI poll',w.music_status.text())
+        self.assertIn('Error',w.mode_badge.text())
+        self.assertIn('capture failed before GUI poll',w.mode_badge.toolTip())
 
     def test_screen_activation_failure_restores_safe_selector(self):
         def fail(*args):raise OSError('screen denied')

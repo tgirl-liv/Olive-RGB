@@ -148,7 +148,12 @@ class StudioWindow(QMainWindow):
         if self.workspace.inspector_collapsed:self.toggle_inspector()
         self.c.state.select_inspector(tab);self.c.changed.emit();return True
     def sync(self):
-        s=self.c.state;self.pages.setCurrentIndex(NAVIGATION.index(s.page))
+        s=self.c.state;index=NAVIGATION.index(s.page)
+        if self.pages.currentIndex()!=index:
+            # QStackedWidget transfers focus when hiding/showing a page. Qt's
+            # focus visibility handling must not change the dashboard viewport.
+            bar=self.pages.widget(0).verticalScrollBar();position=bar.value()
+            self.pages.setCurrentIndex(index);bar.setValue(position)
         for page,b in self.nav.items():assign(b,page==s.page)
         self.pause.setText('Pause' if s.playing else 'Play')
         if not s.motion:self.c.advance(time.monotonic())

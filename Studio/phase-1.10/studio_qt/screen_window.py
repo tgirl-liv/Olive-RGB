@@ -12,6 +12,7 @@ from .widgets.light_preview import VirtualLightPreview
 
 
 class ScreenLiveWindow(MusicLiveWindow):
+    supported_modes=('Manual','Music','Screen')
     def __init__(self,*args,screen_factory=None,monitor_scanner=None,**kwargs):
         super().__init__(*args,adapter_factory=ScreenLightingAdapter,**kwargs)
         self.screen_runtime=ScreenRuntime(screen_factory,monitor_scanner)
@@ -183,7 +184,7 @@ class ScreenLiveWindow(MusicLiveWindow):
             self.runtime.take();self.runtime.take_spectrum()
             if not self.runtime.busy:self.music_timer.stop()
             return
-        running=self.c.adapter.music_active or self.runtime.wanted
+        running=self.c.adapter.music_active or self.runtime.wanted or self.runtime.started_at is not None
         super().poll_music()
         if running and not self.runtime.wanted and not self.c.adapter.music_active and not self._closing:
             message=self.music_status.text()
@@ -197,7 +198,6 @@ class ScreenLiveWindow(MusicLiveWindow):
         self.screen_stop.setEnabled(not self._closing and (r.busy or self.c.adapter.screen_active or self._pending_screen_mode is not None))
         self.refresh_monitors_button.setEnabled(not self._closing and not r.busy and not r.scanning)
         self.monitor.setEnabled(not self._closing and not r.scanning)
-        self.master.modes['Screen'].setEnabled(not self._closing)
         self.sync_mode_selector()
         for control in (self.screen_intensity,self.screen_saturation):control.setEnabled(not self._closing)
         frame=self._last_screen_frame

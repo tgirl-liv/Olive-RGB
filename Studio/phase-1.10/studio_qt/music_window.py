@@ -19,6 +19,7 @@ from .widgets.music_theme_editor import MusicThemeEditor
 
 
 class MusicLiveWindow(DualLiveWindow):
+    supported_modes=('Manual','Music')
     def __init__(self, workspace_path=None, worker_factory=None, hue_factory=None, hue_identity=None, engine_factory=None,preferences_path=None,album_worker_factory=None,themes_path=None,adapter_factory=MusicLightingAdapter):
         adapter=adapter_factory(worker_factory=worker_factory,hue_factory=hue_factory,hue_identity=hue_identity)
         super().__init__(workspace_path=workspace_path,adapter=adapter,preferences_path=preferences_path)
@@ -293,7 +294,6 @@ class MusicLiveWindow(DualLiveWindow):
             else:self.album.update_light_preview(None,None,'Waiting for fresh Music data.' if active else 'Start Music for measured output.')
         self.music_start.setEnabled(not self._closing and not self.runtime.busy)
         self.music_stop.setEnabled(not self._closing and (active or self.runtime.busy))
-        self.master.modes['Music'].setEnabled(not self._closing)
         for widget in (self.profile,self.palette,self.sensitivity,self.smoothing,self.harmony,self.separation,self.output_brightness,self.output_saturation,self.adjustment_reset):widget.setEnabled(not self._closing)
         selected=self.c.state.selected_channel
         if a.owns(selected):
