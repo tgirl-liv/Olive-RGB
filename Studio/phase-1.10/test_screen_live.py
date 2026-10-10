@@ -227,4 +227,61 @@ class ScreenWindowTests(unittest.TestCase):
         self.assertFalse(w.c.adapter.screen_active);self.assertIn('stale',w.screen_status.text());self.assertIsNone(w.screen_preview.virtual_rgb)
 
 
+class ScreenLauncherTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):fixtures.MusicTests.setUpClass()
+
+    def test_actual_live_launcher_screen_navigation_exposes_controls(self):
+        from PySide6.QtCore import QTimer
+        from PySide6.QtWidgets import QApplication,QDialog,QRadioButton
+        from studio_qt import app as launcher
+        app=QApplication.instance();errors=[];windows=[];stage=0
+        def drive():
+            nonlocal stage
+            try:
+                for dialog in app.topLevelWidgets():
+                    if isinstance(dialog,QDialog) and 'startup mode' in dialog.windowTitle():
+                        for radio in dialog.findChildren(QRadioButton):
+                            if radio.text().startswith('LIVE'):radio.setChecked(True)
+                        dialog.accept();return
+                for w in app.topLevelWidgets():
+                    if not isinstance(w,ScreenLiveWindow):continue
+                    if w not in windows:windows.append(w)
+                    if stage==0 and w.isVisible() and w.monitor.count():
+                        w.nav['Screen'].click();app.processEvents()
+                        self.assertEqual(w.c.state.page,'Screen')
+                        self.assertTrue(w.movie_start.isVisible())
+                        self.assertTrue(w.gaming_start.isVisible())
+                        self.assertTrue(w.screen_intensity.isVisible())
+                        self.assertTrue(w.screen_saturation.isVisible())
+                        self.assertTrue(w.screen_preview.isVisible())
+                        self.assertIs(w.pages.currentWidget().widget(),w.movie_start.parentWidget().parentWidget())
+                        self.assertFalse(w.screen_runtime.busy)
+                        w.movie_start.click();stage=1
+                    elif stage==1 and w.screen_preview.virtual_rgb is not None:
+                        self.assertEqual(w.c.state.mode,'Movie');w.gaming_start.click();stage=2
+                    elif stage==2 and w.screen_runtime.engine and w.screen_runtime.engine.mode=='Gaming' and w.screen_preview.virtual_rgb is not None:
+                        self.assertEqual(w.c.state.mode,'Gaming')
+                        self.assertIsNone(w.c.adapter.session.worker)
+                        self.assertIsNone(w.c.adapter.hue.thread)
+                        self.assertFalse(w.runtime.busy)
+                        w.screen_stop.click();w.close();stage=3
+                    elif stage==3 and w._cleanup_done and not w.screen_runtime.busy and not w.isVisible():app.quit()
+            except BaseException as error:errors.append(error);app.exit(1)
+        def timeout():errors.append(AssertionError('Launcher Screen navigation timed out'));app.exit(1)
+        timer=QTimer();timer.timeout.connect(drive);timer.start(25)
+        watchdog=QTimer();watchdog.setSingleShot(True);watchdog.timeout.connect(timeout);watchdog.start(10000)
+        Capture.calls=[];Capture.delay=0
+        try:
+            with tempfile.TemporaryDirectory() as directory,patch('studio_qt.screen_engine.mss.MSS',Capture),patch.object(launcher,'default_path',return_value=Path(directory)/'workspace.json'),patch.object(launcher,'preferences_path_default',return_value=Path(directory)/'preferences-v1.json'):
+                result=launcher.main()
+            self.assertFalse(errors,str(errors));self.assertEqual(result,0);self.assertEqual(stage,3);self.assertEqual(len(windows),1)
+        finally:
+            timer.stop();watchdog.stop()
+            for w in windows:w.close()
+            deadline=time.monotonic()+3
+            while any(w.screen_runtime.busy or not w._cleanup_done for w in windows) and time.monotonic()<deadline:app.processEvents();QTest.qWait(10)
+            for w in windows:w.deleteLater()
+
+
 if __name__=='__main__':unittest.main()

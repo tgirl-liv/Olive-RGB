@@ -27,6 +27,25 @@ Follow Master ON. Corner/LEDBLE keeps its existing local scaling and Follow Mast
 behavior. Album and Music previews remain on the Music page; Screen has a dedicated
 preview using the same renderer, without a simulated lighting algorithm.
 
+## Screen UI integration diagnostic
+
+The actual Qt entry point is `studio_qt_preview.py` → `studio_qt.app.main()` →
+`ScreenLiveWindow` when LIVE is selected. Search for **ScreenLiveWindow**, not
+ScreenWindow. `Launch Qt Preview.bat` launches this entry point;
+`Launch Studio Preview.bat` launches the older Tkinter `studio_preview.py`.
+
+Screen navigation selects `NAVIGATION.index('Screen')` (currently 3). The initial
+sprint incorrectly inserted its LIVE panel at index 2, the Devices page, leaving
+Screen with the placeholder. The correction uses the named navigation index.
+A launcher regression selects LIVE in the actual chooser, navigates to Screen,
+asserts visible controls and preview, runs Movie/Gaming without hardware, and closes.
+
+The UI correction is included on `origin/development/qt-studio`. Pull the updated
+branch using the commands below; no separate patch is required. If you already
+applied a local patch, reconcile it before pulling. Close existing Studio
+processes before launching the corrected Qt entry point. Windows and physical
+hardware acceptance remain pending.
+
 ## Install and launch (PowerShell)
 
 The Screen sprint is available on `origin/development/qt-studio`. Before testing,
@@ -115,8 +134,15 @@ can still prevent complete process teardown and needs Windows diagnosis.
 
 ## Cloud validation
 
-326 automated tests passed (28 new Screen tests plus 298 regressions), the actual
+The original sprint passed 326 automated tests (28 Screen tests plus 298 regressions), the actual
 DEMO launcher smoke passed, and a separate actual LIVE launcher / real Linux Xvfb
 MSS smoke passed. No uncaught thread exceptions or deleted-object errors were
 reported. Dependencies passed the environment package compatibility check.
 These results do not constitute Windows or physical-device acceptance.
+
+The UI integration correction passed 327 tests (29 Screen tests plus 298
+regressions), DEMO smoke, and LIVE MSS smoke with visible Screen navigation.
+The launcher regression failed before the page-placement correction and passes
+after it. One existing fake-BLE write-spacing assertion failed on the first full
+run; it passed unchanged on recheck and on the final full-suite rerun. Windows
+verification of the UI correction remains pending.

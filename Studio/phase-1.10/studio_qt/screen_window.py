@@ -2,6 +2,7 @@
 import time
 from PySide6.QtCore import QTimer,QSignalBlocker
 from PySide6.QtWidgets import QComboBox,QHBoxLayout
+from studio_ui.state import NAVIGATION
 from .music_window import MusicLiveWindow
 from .screen_adapter import ScreenLightingAdapter
 from .screen_runtime import ScreenRuntime
@@ -33,7 +34,7 @@ class ScreenLiveWindow(MusicLiveWindow):
         for control in (self.movie_start,self.gaming_start,self.screen_stop):row.addWidget(control)
         panel.box.addLayout(row)
         self.screen_preview=VirtualLightPreview();panel.box.addWidget(self.screen_preview)
-        self.pages.widget(2).widget().layout().insertWidget(1,panel)
+        self.pages.widget(NAVIGATION.index('Screen')).widget().layout().insertWidget(1,panel)
         self.page_notes['Screen'].setText('LIVE MSS capture runs in the background. Monitor, intensity and saturation persist; launch stays idle. Protected video may appear black. Preview is read-only.')
         self.master.modes['Screen'].clicked.connect(lambda:self.c.navigate('Screen'))
         self.master.modes['Manual'].clicked.connect(self.stop_screen)
