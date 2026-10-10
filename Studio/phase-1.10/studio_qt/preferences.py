@@ -7,6 +7,7 @@ from pathlib import Path
 import re
 import tempfile
 from .music_presets import MGK_PALETTES
+from .device_families import LOTUS,identity_for
 
 PROFILES = ('Smooth', 'Reactive', 'Hyperpop', 'MGK')
 PALETTES = ('Default', 'The Weeknd — After Hours', 'The Weeknd — Dawn FM',
@@ -28,12 +29,18 @@ def defaults(mode):
                       'relationship': 'Coordinated Colors', 'separation': .25,
                       'participation': {'Corner': True, 'Hue': True}}}
     if mode == 'live':result['music'].update(color_source='Preset',custom_theme_id=None,output_brightness=1.,output_saturation=1.)
+    if mode == 'live':result['controller']={'family':LOTUS,'identity':identity_for(LOTUS)}
     return result
 
 
 def validate(data, mode):
     """Reject malformed values; fill missing v1 fields for forward additions."""
     def merge(template, supplied, key=''):
+        if key=='controller':
+            if not isinstance(supplied,dict):raise ValueError('Invalid controller')
+            family=supplied.get('family',LOTUS);identity=identity_for(family)
+            if supplied.get('identity',identity)!=identity:raise ValueError('Controller identity does not match the configured family')
+            return {'family':family,'identity':identity}
         if isinstance(template, dict):
             if not isinstance(supplied, dict):raise ValueError('Invalid '+key)
             return {k: merge(v, supplied.get(k, v), k) for k, v in template.items()}

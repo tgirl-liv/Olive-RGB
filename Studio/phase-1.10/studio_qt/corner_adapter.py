@@ -68,6 +68,12 @@ class CornerLampAdapter(QObject):
     def connect_corner(self):
         if self.closed or self.session.closed:return
         self.session.connect()
+    def select_family(self,family):
+        if self.closed:return
+        previous=self.session.family;self.session.select_family(family)
+        if previous!=self.session.family:
+            self.connected=False;self.status='disconnected';self.message=family+' selected · press Connect'
+            self.request_status()
     def disconnect_corner(self):
         if self.closed:return
         self.connected=False;self.status='disconnecting';self.session.disconnect();self.request_status()

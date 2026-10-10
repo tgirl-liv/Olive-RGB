@@ -7,6 +7,7 @@ import asyncio
 import threading
 import time
 from dataclasses import dataclass
+from .device_families import LOTUS,identity_for
 
 LAMP_NAME = 'MELK-OA10   7F'
 LAMP_ADDRESS = 'BE:28:87:00:08:7F'
@@ -35,6 +36,7 @@ class CornerSession:
         self.pending = None
         self.thread = None
         self.worker = None
+        self.family = LOTUS
         self._operation_generation = 0
         self._write_generation = 0
         self._last_submit = None
@@ -49,7 +51,8 @@ class CornerSession:
             if self.closed or self.wanted:return
             self.generation += 1;self.wanted = True;self.pending = None
             generation = self.generation
-            self._emit(generation,'connecting',f'Connecting to {LAMP_NAME} · {LAMP_ADDRESS}')
+            identity=identity_for(self.family)
+            self._emit(generation,'connecting','Connecting to '+identity['name']+' · '+self.family)
             if self.thread is None:
                 self.thread = threading.Thread(target=self._bootstrap,name='Corner session lifecycle',daemon=True)
                 self.thread.start()
@@ -59,6 +62,16 @@ class CornerSession:
             if self.closed:return
             self.generation += 1;self.wanted = False;self.pending = None
             self._emit(self.generation,'disconnecting' if self.worker else 'disconnected','Disconnect requested' if self.worker else 'Disconnected')
+
+    def select_family(self,family):
+        identity_for(family)
+        with self.lock:
+            if self.closed or family==self.family:return
+            self.family=family
+            # Selecting never starts a connection. Invalidate writes/connects
+            # before the existing actor drains and disconnects the old driver.
+            self.generation+=1;self.wanted=False;self.pending=None
+            self._emit(self.generation,'disconnecting' if self.worker else 'disconnected',family+' selected · press Connect')
 
     def color(self,rgb):
         with self.lock:
@@ -138,6 +151,10 @@ class CornerSession:
             client=getattr(w.lamp,'client',None)
             if client is not None and client.is_connected:
                 await asyncio.wait_for(client.disconnect(),6)
+        except Exception:
+            # An uncertain disconnect must never be followed by another client.
+            with self.lock:self.closed=True;self.wanted=False;self.pending=None
+            raise
         finally:
             w.connected=False;w.connecting=False;w.last_rgb=None;w.last_send_time=0
 
@@ -152,7 +169,7 @@ class CornerSession:
         try:
             while True:
                 with self.lock:
-                    closed,wanted,generation,pending=self.closed,self.wanted,self.generation,self.pending
+                    closed,wanted,generation,pending,family=self.closed,self.wanted,self.generation,self.pending,self.family
                 if closed:break
                 if not wanted:
                     if disconnected!=generation:
@@ -167,17 +184,17 @@ class CornerSession:
                         if attempted==generation:
                             await asyncio.sleep(.05);continue
                         attempted=generation;self._operation_generation=generation;self._error=''
-                        if not await self._operation(w._connect('LotusLamp Corner Lamp'),generation,40):
+                        if not await self._operation(w._connect(family),generation,40):
                             await self._drop();continue
                         client=getattr(w.lamp,'client',None)
                         if self._error or not w.connected or client is None or not client.is_connected:
                             raise ConnectionError(self._error or 'Lamp did not establish a BLE connection')
-                        if str(client.address).upper()!=LAMP_ADDRESS:
+                        if family==LOTUS and str(client.address).upper()!=LAMP_ADDRESS:
                             raise ConnectionError('Connected address does not match the configured Corner Lamp')
                         w.last_rgb=None;w.last_send_time=0
                         connected_generation=generation
-                        self._emit(generation,'connected',f'Connected · {LAMP_NAME} · {LAMP_ADDRESS}')
-                    if not w.lamp.client.is_connected:raise ConnectionError('Corner Lamp connection lost')
+                        self._emit(generation,'connected','Connected · '+identity_for(family)['name']+' · '+str(client.address))
+                    if not w.lamp.client.is_connected:raise ConnectionError(family+' connection lost')
                     with self.lock:pending=self.pending
                     if pending and pending[0]==generation:
                         rgb=pending[1]
@@ -198,9 +215,11 @@ class CornerSession:
                 except Exception as error:
                     self._fail(generation,error)
                     try:await self._drop()
-                    except Exception as cleanup:self._emit(generation,'error',f'{error}; cleanup: {cleanup}')
+                    except Exception as cleanup:
+                        with self.lock:self.closed=True;self.wanted=False;self.pending=None
+                        self._emit(self.generation,'error',f'{error}; cleanup: {cleanup} · reopen LIVE before reconnecting')
         except Exception as error:
-            self._fail(self.generation,error)
+            self._emit(self.generation,'error',f'Disconnect cleanup failed: {error} · reopen LIVE before reconnecting')
         finally:
             try:await self._drop()
             except Exception as error:self._emit(self.generation,'error',f'Disconnect cleanup failed: {error}')

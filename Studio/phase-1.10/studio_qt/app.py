@@ -122,6 +122,10 @@ class StudioWindow(QMainWindow):
     def save_preferences(self):
         self.preferences_timer.stop()
         values=snapshot(self.c.state,self.music_preferences())
+        if self.preferences_mode=='live':
+            from .device_families import identity_for
+            family=self.c.adapter.session.family
+            values['controller']={'family':family,'identity':identity_for(family)}
         self.preferences_store.save(self.preferences_mode,values)
         self.preferences_notice.setText(self.preferences_store.error)
         self.preferences_notice.setVisible(bool(self.preferences_store.error))

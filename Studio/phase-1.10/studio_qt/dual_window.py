@@ -10,9 +10,9 @@ class DualLiveWindow(LiveStudioWindow):
     def __init__(self, workspace_path=None, worker_factory=None, hue_factory=None, hue_identity=None, adapter=None,preferences_path=None):
         adapter = adapter if adapter is not None else DualLightingAdapter(worker_factory=worker_factory, hue_factory=hue_factory, hue_identity=hue_identity)
         super().__init__(workspace_path=workspace_path, adapter=adapter,preferences_path=preferences_path)
-        self.setWindowTitle('Olive RGB Studio · LIVE Corner + Hue · Manual only')
+        self.setWindowTitle('Olive RGB Studio · LIVE Bluetooth + Hue · Manual only')
         self.mode_badge.setText('LIVE · MANUAL')
-        self.demo.setText('Corner + Hue')
+        self.demo.setText('Bluetooth + Hue')
         for label in self.channel_panel.findChildren(QLabel):
             if label.text() == 'LIVE · CORNER ONLY':label.setText('LIVE')
         self.hue_connect = button('Connect Hue', self.connect_hue)
@@ -52,7 +52,7 @@ class DualLiveWindow(LiveStudioWindow):
         self.hue_disconnect.setEnabled(not self._closing and (a.hue.wanted or a.hue_connected))
         self.master.power.setEnabled(corner or (hue and a.hue_caps.get('power', False)))
         self.master.level.setEnabled(corner or (hue and a.hue_caps.get('brightness', False)))
-        self.master.power.setToolTip('Following devices: Corner uses RGB black; Hue uses its verified power control.')
+        self.master.power.setToolTip('Following devices: Bluetooth uses RGB black; Hue uses its verified power control.')
         for row in self.findChildren(DeviceChannel):
             if row.key != 'Hue':continue
             row.select.setToolTip('LIVE Philips Hue · verified capabilities only')

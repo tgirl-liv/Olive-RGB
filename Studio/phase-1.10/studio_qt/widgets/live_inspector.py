@@ -55,9 +55,10 @@ class LiveSetupInspector(QWidget):
         statuses=[];capabilities=[]
         for key in keys:
             if key == 'Corner':
-                statuses.append('Corner · '+w.live_status.text())
+                name=w.c.state.channels['Corner'].name
+                statuses.append(name+' · '+w.live_status.text())
                 power = 'software power via RGB black' if a.software_power else 'power unsupported'
-                capabilities.append('Corner: '+('connected, RGB color, software brightness, '+power+'. No native power or temperature control.'
+                capabilities.append(name+': '+('connected, RGB color, software brightness, '+power+'. No native power or temperature control.'
                                                if a.connected else 'disconnected; RGB color, software brightness, '+power+' after connection.'))
             elif hasattr(w, 'hue_status'):
                 statuses.append(w.hue_status.text())
