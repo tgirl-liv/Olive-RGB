@@ -1,5 +1,55 @@
 # Windows Music / Screen failure audit
 
+## MASTER BUS button verification
+
+The actual side-by-side controls are `MasterBus.modes['Music']` and
+`MasterBus.modes['Screen']` in `studio_qt/widgets/controls.py`, created by
+`StudioWindow` in `studio_qt/app.py`. `Launch Qt Preview.bat` launches
+`studio_qt_preview.py`; choosing LIVE constructs `ScreenLiveWindow`.
+Each `clicked(bool)` connection captures its own mode name and calls
+`StudioController.request_mode()`. That resolves the current LIVE handler at click
+time: `ScreenLiveWindow.request_mode()`, replacing the music-only handler installed
+by its superclass. The same dispatcher handles `controller.set('mode', ...)`.
+There is no disconnect/reconnect of button signals, no captured DEMO handler, and
+no extra audio or screen worker. The sidebar remains navigation only.
+
+The existing MASTER BUS route already activated capture in automated reproduction;
+no broken or overwritten connection was established. The selector now explicitly
+shows Starting until the first measured frame, then Active. A failure restores
+Manual and shows Error in the header; its tooltip contains the actual error.
+This is button wiring/feedback verification, not proof of Windows native capture.
+
+`test_launched_master_buttons_start_production_capture_and_previews` drives the
+real launcher and uses mouse clicks on its actual MASTER BUS controls. It runs the
+production runtime and processing paths with synthetic audio and MSS pixels,
+checks one capture stream, FFT delivery and calculated previews, and switches
+to Screen and Manual without connecting lights. Production input-boundary tests
+also exercise Starting, changing pixels, silence, and startup failures.
+
+Windows acceptance: from the repository root run
+`Set-Location .\Studio\phase-1.10`, then
+`$env:OLIVE_STUDIO_DIAGNOSTICS='1'` and `& '.\Launch Qt Preview.bat'`.
+Choose LIVE, leave lights disconnected, and click **MASTER BUS → Music** on
+the Studio dashboard without visiting the Music page. Play audio on the default
+Windows playback device. Expect Starting, then Active, responsive FFT bars and
+calculated RGB. Silence should report running silence rather than a startup error.
+Return to Studio and click **MASTER BUS → Screen**: expect Starting, then Active
+with the saved monitor/Movie/Gaming settings and a preview that changes with
+screen content. Screen currently opens its page automatically; return to Studio
+to access the MASTER BUS again. Click Manual and check both captures stop.
+Repeat selection and Music/Screen/Manual switching; no lights should connect.
+If Error appears, record its tooltip and collect the diagnostic log using the
+procedure below. Windows audio/screen capture and physical lights remain pending.
+
+Follow-up validation: 387 unique automated tests passed across the full test
+groups, plus the actual launcher DEMO smoke test and dependency compatibility
+check. The initial full run failed the existing
+`test_rapid_colors_coalesce_latest_and_limit_rate` 245 ms fake-write spacing
+assertion; the unchanged 28-test Corner group passed on rerun. Both logs are
+retained outside Git in `/workspace/olive-rgb-master-mode-validation`. No BLE
+timing, test thresholds, capture algorithms, or COM initialization were changed.
+This follow-up remains uncommitted for review.
+
 ## Evidence and limits
 
 The audited local working tree initially had no uncommitted changes, on

@@ -23,12 +23,21 @@ class StudioController(QObject):
         self.transition_progress = 1.
 
     def set(self, name, value):
-        if getattr(self.adapter,"live",False) and name=="mode":
+        if name=='mode':
+            self.request_mode(value);return
+        self._set(name,value)
+
+    def request_mode(self,value):
+        """One dispatch point for the actual selector and other mode requests."""
+        if getattr(self.adapter,"live",False):
             emit('controller.mode.request',music=value=='Music',screen=value=='Screen',manual=value=='Manual')
             handler=getattr(self,"mode_request",None)
             if handler is not None:
                 handler(value);return
             if value!="Manual":return
+        self._set('mode',value)
+
+    def _set(self,name,value):
         if name in ('master_power','master_brightness'):
             self.adapter.set_master(value if name=='master_power' else self.state.master_power,
                                     value if name=='master_brightness' else self.state.master_brightness)

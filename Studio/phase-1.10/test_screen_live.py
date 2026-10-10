@@ -8,6 +8,7 @@ from pathlib import Path
 import unittest
 from unittest.mock import patch
 import numpy as np
+from PySide6.QtCore import Qt
 from PySide6.QtTest import QTest
 import test_music_live as fixtures
 from studio_qt.screen_engine import ScreenEngine
@@ -282,17 +283,21 @@ class ScreenWindowTests(unittest.TestCase):
 
     def test_music_activation_failure_restores_safe_selector(self):
         def fail(*args):raise OSError('audio unavailable')
-        w=self.window();w.runtime.factory=fail;w.master.modes['Music'].click()
+        w=self.window();w.runtime.factory=fail;QTest.mouseClick(w.master.modes['Music'],Qt.MouseButton.LeftButton)
         self.wait(lambda:'audio unavailable' in w.music_status.text())
         self.assertEqual(w.c.state.mode,'Manual');self.assertTrue(w.master.modes['Manual'].isChecked())
         self.assertFalse(w.c.adapter.music_active);self.assertFalse(w.c.adapter.screen_active)
+        self.assertIn('Error',w.mode_badge.text());self.assertIn('audio unavailable',w.mode_badge.toolTip())
+        self.assertNotIn('Active',w.master.modes['Music'].text())
 
     def test_screen_activation_failure_restores_safe_selector(self):
         def fail(*args):raise OSError('screen denied')
-        w=self.window(screen_factory=fail);w.master.modes['Screen'].click()
+        w=self.window(screen_factory=fail);QTest.mouseClick(w.master.modes['Screen'],Qt.MouseButton.LeftButton)
         self.wait(lambda:'screen denied' in w.screen_status.text())
         self.assertEqual(w.c.state.mode,'Manual');self.assertTrue(w.master.modes['Manual'].isChecked())
         self.assertFalse(w.master.modes['Screen'].isChecked());self.assertFalse(self.f.f.corner.workers)
+        self.assertIn('Error',w.mode_badge.text());self.assertIn('screen denied',w.mode_badge.toolTip())
+        self.assertNotIn('Active',w.master.modes['Screen'].text())
 
     def test_saved_gaming_selection_and_music_settings_activate(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -351,23 +356,28 @@ class ScreenWindowTests(unittest.TestCase):
         with patch.object(production,'sc',LoopbackAudio(backend)):
             w=self.window(engine_factory=engine_factory)
             try:
-                w.master.modes['Music'].click();self.wait(entered.is_set)
+                QTest.mouseClick(w.master.modes['Music'],Qt.MouseButton.LeftButton);self.wait(entered.is_set)
                 self.assertFalse(w.c.adapter.music_active);self.assertEqual(w.c.state.mode,'Manual')
+                self.assertEqual(w.c.state.page,'Studio')
+                self.assertTrue(w.music_timer.isActive())
+                self.assertIn('Starting',w.master.modes['Music'].text())
+                self.assertFalse(w.master.modes['Music'].isChecked())
                 self.assertIsNone(w.c.adapter.last_frame)
                 for _ in range(4):w.master.modes['Music'].click()
                 gate.set();self.wait(lambda:w.reactor.spectrum_frame is not None and max(w.reactor.levels)>.1)
                 self.assertTrue(w.c.adapter.music_active);self.assertEqual(w.c.state.mode,'Music')
+                self.assertIn('Active',w.master.modes['Music'].text())
                 self.assertEqual(len(w.reactor.spectrum_frame.magnitudes),72)
                 self.assertIsNotNone(w.album.virtual_rgb);self.assertEqual(w.album.virtual_rgb,w.c.adapter.corner_music_rgb(w.c.adapter.music_colors['Corner']))
                 self.assertEqual(len(opens),1);self.assertNotEqual(opens[0],threading.get_ident())
                 self.assertIn('Windows test output',w.music_status.text())
                 samples['amplitude']=0;self.wait(lambda:'capture running · silence' in w.music_status.text())
                 self.assertTrue(w.c.adapter.music_active);self.assertEqual(w.c.adapter.last_frame.energy,0)
-                audio_thread=w.runtime.thread;w.master.modes['Screen'].click()
+                audio_thread=w.runtime.thread;QTest.mouseClick(w.master.modes['Screen'],Qt.MouseButton.LeftButton)
                 self.wait(lambda:w.screen_preview.virtual_rgb is not None)
                 self.assertFalse(audio_thread.is_alive());self.assertEqual(closed,[True])
                 screen_thread=w.screen_runtime.thread;samples['amplitude']=.15
-                w.master.modes['Music'].click()
+                w.nav['Studio'].click();QTest.mouseClick(w.master.modes['Music'],Qt.MouseButton.LeftButton)
                 self.wait(lambda:w.reactor.spectrum_frame is not None and w.c.adapter.music_active)
                 self.assertFalse(screen_thread.is_alive());self.assertEqual(len(opens),2)
                 w.master.modes['Manual'].click();self.wait(lambda:not w.runtime.busy)
@@ -423,11 +433,14 @@ class ScreenWindowTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError,'No enabled loopback matches.*endpoint'):audio.get_microphone('Output',True)
 
     def test_real_screen_selector_waits_for_capture_and_tracks_changed_pixels(self):
-        Capture.delay=.2;w=self.window();w.master.modes['Screen'].click()
+        Capture.delay=.2;w=self.window();QTest.mouseClick(w.master.modes['Screen'],Qt.MouseButton.LeftButton)
         self.wait(lambda:any(call[0]=='grab' for call in Capture.calls))
         self.assertFalse(w.c.adapter.screen_active);self.assertEqual(w.c.state.mode,'Manual')
+        self.assertIn('Starting',w.master.modes['Screen'].text())
+        self.assertFalse(w.master.modes['Screen'].isChecked());self.assertTrue(w.screen_timer.isActive())
         self.wait(lambda:w.screen_preview.virtual_rgb is not None)
         self.assertTrue(w.c.adapter.screen_active);self.assertEqual(w.c.state.mode,'Movie')
+        self.assertIn('Active',w.master.modes['Screen'].text())
         old=w.screen_preview.virtual_rgb;Capture.rgb=(20,220,35)
         self.wait(lambda:w.screen_preview.virtual_rgb!=old)
         self.assertEqual(w.screen_preview.virtual_rgb,w.c.adapter.corner_music_rgb(w.c.adapter.screen_rgb))
@@ -496,6 +509,78 @@ class ScreenWindowTests(unittest.TestCase):
 class ScreenLauncherTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):fixtures.MusicTests.setUpClass()
+
+    def test_launched_master_buttons_start_production_capture_and_previews(self):
+        """Click the launcher's real widgets; mock only native inputs, not runtimes."""
+        from PySide6.QtCore import QTimer
+        from PySide6.QtWidgets import QApplication,QDialog,QRadioButton
+        from studio_qt import app as launcher,music_engine as production
+        from studio_qt.audio_capture import LoopbackAudio
+        app=QApplication.instance();errors=[];windows=[];stage=0
+        gate=threading.Event();entered=threading.Event();opens=[];closed=[]
+        class Recorder:
+            def __enter__(self):opens.append(threading.get_ident());entered.set();return self
+            def __exit__(self,*args):closed.append(True)
+            def record(self,numframes):
+                gate.wait(2);time.sleep(.01)
+                mono=.15*np.sin(np.arange(numframes)*2*np.pi*1000/48000)
+                return np.column_stack([mono,mono])
+        loopback=SimpleNamespace(id='test-output',name='Test playback',isloopback=True,recorder=lambda **kwargs:Recorder())
+        backend=SimpleNamespace(default_speaker=lambda:loopback,all_microphones=lambda **kwargs:[loopback])
+        def drive():
+            nonlocal stage
+            try:
+                for dialog in app.topLevelWidgets():
+                    if isinstance(dialog,QDialog) and 'startup mode' in dialog.windowTitle():
+                        for radio in dialog.findChildren(QRadioButton):
+                            if radio.text().startswith('LIVE'):radio.setChecked(True)
+                        dialog.accept();return
+                for w in app.topLevelWidgets():
+                    if not isinstance(w,ScreenLiveWindow):continue
+                    if w not in windows:windows.append(w)
+                    if stage==0 and w.isVisible() and w.monitor.count():
+                        self.assertEqual(w.c.state.page,'Studio')
+                        self.assertTrue(w.master.modes['Music'].isVisible())
+                        QTest.mouseClick(w.master.modes['Music'],Qt.MouseButton.LeftButton);stage=1
+                    elif stage==1 and entered.is_set():
+                        self.assertTrue(w.music_timer.isActive());self.assertFalse(w.c.adapter.music_active)
+                        self.assertIn('Starting',w.master.modes['Music'].text())
+                        self.assertEqual(w.c.state.mode,'Manual')
+                        for _ in range(3):QTest.mouseClick(w.master.modes['Music'],Qt.MouseButton.LeftButton)
+                        gate.set();stage=2
+                    elif stage==2 and w.reactor.spectrum_frame is not None and w.album.virtual_rgb is not None:
+                        self.assertEqual(len(opens),1);self.assertEqual(w.c.state.page,'Studio')
+                        self.assertEqual(w.c.state.mode,'Music');self.assertGreater(w.c.adapter.last_frame.energy,0)
+                        self.assertEqual(len(w.reactor.spectrum_frame.magnitudes),72)
+                        self.assertEqual(w.album.virtual_rgb,w.c.adapter.corner_music_rgb(w.c.adapter.music_colors['Corner']))
+                        self.assertIn('Active',w.master.modes['Music'].text())
+                        QTest.mouseClick(w.master.modes['Screen'],Qt.MouseButton.LeftButton);stage=3
+                    elif stage==3 and w.screen_preview.virtual_rgb is not None:
+                        self.assertEqual(closed,[True]);self.assertFalse(w.runtime.busy)
+                        self.assertEqual(w.c.state.mode,'Movie');self.assertIn('Active',w.master.modes['Screen'].text())
+                        self.assertEqual(w.screen_preview.virtual_rgb,w.c.adapter.corner_music_rgb(w.c.adapter.screen_rgb))
+                        self.assertIsNone(w.c.adapter.session.worker);self.assertIsNone(w.c.adapter.hue.thread)
+                        w.nav['Studio'].click();QTest.mouseClick(w.master.modes['Manual'],Qt.MouseButton.LeftButton);stage=4
+                    elif stage==4 and not w.screen_runtime.busy:
+                        self.assertEqual(w.c.state.mode,'Manual');self.assertFalse(w.c.adapter.screen_active)
+                        w.close();stage=5
+                    elif stage==5 and w._cleanup_done and not w.isVisible():app.quit()
+            except BaseException as error:errors.append(error);app.exit(1)
+        timer=QTimer();timer.timeout.connect(drive);timer.start(25)
+        watchdog=QTimer();watchdog.setSingleShot(True)
+        watchdog.timeout.connect(lambda:(errors.append(AssertionError('Launched main mode buttons timed out')),app.exit(1)));watchdog.start(12000)
+        Capture.calls=[];Capture.delay=0
+        try:
+            with tempfile.TemporaryDirectory() as directory,patch('mss.MSS',Capture),patch.object(production,'sc',LoopbackAudio(backend)),patch.object(launcher,'default_path',return_value=Path(directory)/'workspace.json'),patch.object(launcher,'preferences_path_default',return_value=Path(directory)/'preferences-v1.json'):
+                result=launcher.main()
+            self.assertFalse(errors,str(errors));self.assertEqual(result,0);self.assertEqual(stage,5)
+            self.assertEqual(len(windows),1);self.assertNotEqual(opens[0],threading.get_ident())
+        finally:
+            gate.set();timer.stop();watchdog.stop()
+            for w in windows:w.close()
+            deadline=time.monotonic()+3
+            while any(w.runtime.busy or w.screen_runtime.busy or not w._cleanup_done for w in windows) and time.monotonic()<deadline:app.processEvents();QTest.qWait(10)
+            for w in windows:w.deleteLater()
 
     def test_actual_live_launcher_screen_navigation_exposes_controls(self):
         from PySide6.QtCore import QTimer

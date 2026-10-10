@@ -19,7 +19,7 @@ class MasterBus(Panel):
         self.modes={};self.mode_widget=QWidget()
         modes=QHBoxLayout(self.mode_widget);modes.setContentsMargins(0,0,0,0);modes.setSpacing(3)
         for name in ['Manual','Music','Screen']:
-            b=button(name,lambda checked=False,name=name:controller.set('mode',name),True);b.setObjectName('modeSegment');b.setAccessibleName(name+' mode');modes.addWidget(b);self.modes[name]=b
+            b=button(name,lambda checked=False,name=name:controller.request_mode(name),True);b.setObjectName('modeSegment');b.setAccessibleName(name+' mode');modes.addWidget(b);self.modes[name]=b
         controller.changed.connect(self.sync);controller.output_changed.connect(self.output);self.reflow();self.sync()
     def edit_output(self):
         if getattr(self.c.adapter,'live',False):self.c.select_target('Both')

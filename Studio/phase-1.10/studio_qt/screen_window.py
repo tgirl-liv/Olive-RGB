@@ -19,6 +19,7 @@ class ScreenLiveWindow(MusicLiveWindow):
         self.destroyed.connect(lambda *_:runtime.close())
         self._pending_screen_mode=None;self._pending_music=False;self._last_screen_frame=None
         self._screen_mode=self.preferences['screen']['capture_mode']
+        self._mode_error=''
         self.c.mode_request=self.request_mode
         self.setWindowTitle('Olive RGB Studio · LIVE Manual / Music / Movie / Gaming')
         self.mode_badge.setText('LIVE · MUSIC / SCREEN')
@@ -56,6 +57,7 @@ class ScreenLiveWindow(MusicLiveWindow):
         active='Music' if a.music_active or self.runtime.wanted else self._screen_mode if a.screen_active or self.screen_runtime.wanted else 'Manual'
         if not restart and (mode==pending or (pending is None and mode==active and (mode!='Manual' or (self.c.state.mode=='Manual' and not (self.runtime.wanted or self.screen_runtime.wanted))))):
             self.sync_mode_selector();return
+        self._mode_error=''
         MusicLiveWindow.stop_music(self)
         self.screen_runtime.stop();a.stop_screen();self._last_screen_frame=None
         self._pending_music=mode=='Music'
@@ -73,7 +75,14 @@ class ScreenLiveWindow(MusicLiveWindow):
 
     def sync_mode_selector(self):
         mode='Screen' if self.c.state.mode in ('Screen','Movie','Gaming') else self.c.state.mode
-        for name,control in self.master.modes.items():assign(control,name==mode)
+        starting='Music' if self._pending_music or (self.runtime.wanted and not self.c.adapter.music_active) else 'Screen' if self._pending_screen_mode or (self.screen_runtime.wanted and not self.c.adapter.screen_active) else None
+        for name,control in self.master.modes.items():
+            assign(control,name==mode)
+            state='Starting' if name==starting else 'Active' if name==mode else ''
+            control.setText(name+(' · '+state if state else ''))
+            control.setToolTip(self._mode_error or (name+' · '+state if state else 'Start '+name+' with saved settings; no device connection'))
+        self.mode_badge.setText('LIVE · '+(starting+' · Starting' if starting else mode+' · Active')+(' · Error' if self._mode_error else ''))
+        self.mode_badge.setToolTip(self._mode_error or self.mode_badge.text())
 
     def screen_preferences(self):
         if not hasattr(self,'screen_runtime'):return self.preferences['screen']
@@ -111,6 +120,7 @@ class ScreenLiveWindow(MusicLiveWindow):
     def activation_failed(self,message,status):
         emit('mode.activation.failed',music=status is self.music_status)
         self.request_mode('Manual');status.setText(message)
+        self._mode_error=message;self.sync_mode_selector()
 
     def poll_screen(self):
         r=self.screen_runtime
