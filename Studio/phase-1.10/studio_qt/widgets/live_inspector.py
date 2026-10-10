@@ -112,7 +112,7 @@ class LiveMusicInspector(QWidget):
         self.relationship.setToolTip('Shared production coordination; stop capture before changing' if not w.harmony.isEnabled() else w.harmony.currentText())
         self.separation.setToolTip('Shared production coordination; stop capture before changing' if not w.separation.isEnabled() else 'Separation for Coordinated Colors')
         self.start.setEnabled(w.music_start.isEnabled());self.stop.setEnabled(w.music_stop.isEnabled())
-        ownership=[]
+        ownership=[];owner='Screen' if getattr(w.c.adapter,'screen_active',False) else 'Music'
         for key in keys:
-            ownership.append('Music owns '+key+' color. Opt out or Stop to edit manually.' if w.c.adapter.owns(key) else key+': '+(w.c.target_reason(key,'color') or 'manual color available'))
+            ownership.append(owner+' owns '+key+(' color. Stop Screen to edit manually.' if owner=='Screen' else ' color. Opt out or Stop to edit manually.') if w.c.adapter.owns(key) else key+': '+(w.c.target_reason(key,'color') or 'manual color available'))
         self.status.setText('\n'.join(ownership)+'\n'+w.music_status.text())

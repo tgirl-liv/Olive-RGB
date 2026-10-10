@@ -126,6 +126,7 @@ class StudioWindow(QMainWindow):
             from .device_families import identity_for
             family=self.c.adapter.session.family
             values['controller']={'family':family,'identity':identity_for(family)}
+            values['screen']=self.screen_preferences() if hasattr(self,'screen_preferences') else self.preferences['screen']
         self.preferences_store.save(self.preferences_mode,values)
         self.preferences_notice.setText(self.preferences_store.error)
         self.preferences_notice.setVisible(bool(self.preferences_store.error))
@@ -229,7 +230,7 @@ def main():
     mode=choose_startup_mode()
     if mode is None:return 0
     if mode=='LIVE':
-        from .music_window import MusicLiveWindow
-        window=MusicLiveWindow(workspace_path=default_path(),preferences_path=preferences_path_default())
+        from .screen_window import ScreenLiveWindow
+        window=ScreenLiveWindow(workspace_path=default_path(),preferences_path=preferences_path_default())
     else:window=StudioWindow(workspace_path=default_path(),preferences_path=preferences_path_default())
     window.show();return app.exec()

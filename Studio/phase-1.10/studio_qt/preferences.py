@@ -30,6 +30,7 @@ def defaults(mode):
                       'participation': {'Corner': True, 'Hue': True}}}
     if mode == 'live':result['music'].update(color_source='Preset',custom_theme_id=None,output_brightness=1.,output_saturation=1.)
     if mode == 'live':result['controller']={'family':LOTUS,'identity':identity_for(LOTUS)}
+    if mode == 'live':result['screen']={'monitor':1,'intensity':1.,'saturation':1.25}
     return result
 
 
@@ -41,12 +42,17 @@ def validate(data, mode):
             family=supplied.get('family',LOTUS);identity=identity_for(family)
             if supplied.get('identity',identity)!=identity:raise ValueError('Controller identity does not match the configured family')
             return {'family':family,'identity':identity}
+        if key=='monitor':
+            if type(supplied) is not int or not 1<=supplied<=128:raise ValueError('Invalid monitor')
+            return supplied
         if isinstance(template, dict):
             if not isinstance(supplied, dict):raise ValueError('Invalid '+key)
             return {k: merge(v, supplied.get(k, v), k) for k, v in template.items()}
         if isinstance(template, bool):valid = type(supplied) is bool
         elif isinstance(template, (float, int)):
             low, high = (0., 1.)
+            if key=='intensity':low,high=.25,2.
+            if key=='saturation':low,high=.5,2.5
             if mode == 'live' and key in ('sensitivity', 'smoothing'):
                 low, high = .25, (3. if key == 'sensitivity' else 1.4)
             valid = type(supplied) in (int, float) and low <= supplied <= high and math.isfinite(supplied)

@@ -18,8 +18,8 @@ from .widgets.music_theme_editor import MusicThemeEditor
 
 
 class MusicLiveWindow(DualLiveWindow):
-    def __init__(self, workspace_path=None, worker_factory=None, hue_factory=None, hue_identity=None, engine_factory=None,preferences_path=None,album_worker_factory=None,themes_path=None):
-        adapter=MusicLightingAdapter(worker_factory=worker_factory,hue_factory=hue_factory,hue_identity=hue_identity)
+    def __init__(self, workspace_path=None, worker_factory=None, hue_factory=None, hue_identity=None, engine_factory=None,preferences_path=None,album_worker_factory=None,themes_path=None,adapter_factory=MusicLightingAdapter):
+        adapter=adapter_factory(worker_factory=worker_factory,hue_factory=hue_factory,hue_identity=hue_identity)
         super().__init__(workspace_path=workspace_path,adapter=adapter,preferences_path=preferences_path)
         self.runtime=MusicRuntime(engine_factory)
         self.builtin_palette=self.preferences['music']['palette']

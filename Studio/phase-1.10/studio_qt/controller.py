@@ -53,7 +53,7 @@ class StudioController(QObject):
         capability='color' if field=='color' else field
         supported=(field!='power' or a.software_power) if key=='Corner' else getattr(a,'hue_caps',{}).get(capability,False)
         if not supported:return capability+' unsupported'
-        if field=='color' and hasattr(a,'owns') and a.owns(key):return 'Music owns color'
+        if field=='color' and hasattr(a,'owns') and a.owns(key):return ('Screen' if getattr(a,'screen_active',False) else 'Music')+' owns color'
         return ''
 
     def manual_reference(self):

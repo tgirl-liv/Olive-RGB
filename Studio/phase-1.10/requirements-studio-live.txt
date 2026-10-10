@@ -6,3 +6,6 @@ HueBLE==2.2.3
 bleak-retry-connector==4.7.1
 numpy==2.5.3
 soundcard==0.4.6
+
+# Same MSS capture API as the original ScreenEngine.
+mss==10.2.0

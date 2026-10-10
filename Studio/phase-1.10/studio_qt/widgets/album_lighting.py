@@ -67,15 +67,8 @@ class AlbumLightingPanel(Panel):
             label.setStyleSheet('background-color:'+color+';color:'+ink+';border-radius:5px;')
 
     def update_light_preview(self,rgb,engine_rgb,status):
-        if self.closed:return
-        snapshot=(rgb,engine_rgb,status)
-        if snapshot==self._light_snapshot:return
-        self._light_snapshot=snapshot
-        self.virtual_rgb=rgb
-        color='#'+''.join(f'{c:02X}' for c in rgb) if rgb is not None else '#25283C'
-        self.light_indicator.setStyleSheet('background-color:'+color+';border:1px solid #72768A;border-radius:12px;')
-        def readout(value):return 'RGB '+', '.join(map(str,value))+' · #'+''.join(f'{c:02X}' for c in value)
-        self.light_readout.setText(('Output: '+readout(rgb)+'\nEngine: '+readout(engine_rgb)+'\n' if rgb is not None else '')+status)
+        from .light_preview import update_light_preview
+        update_light_preview(self,rgb,engine_rgb,status)
 
     def fallback(self,description):
         self.artwork_active=False
