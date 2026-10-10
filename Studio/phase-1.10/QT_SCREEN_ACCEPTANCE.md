@@ -46,6 +46,35 @@ applied a local patch, reconcile it before pulling. Close existing Studio
 processes before launching the corrected Qt entry point. Windows and physical
 hardware acceptance remain pending.
 
+## LIVE mode-selector verification — pending on Windows
+
+The LIVE generic controller intentionally rejects automatic non-Manual mode
+changes. The original Screen selector only navigated and kept Music ownership;
+its checked styling also depended exclusively on running capture. The selector
+now opens the idle Screen workspace, stops/releases Music, cancels queued capture
+requests and selects Screen without starting capture or connections. Reopening
+Screen during Movie/Gaming keeps that existing capture running. All three selector
+buttons synchronize from ownership and the idle Screen selection.
+
+After pulling the updated `development/qt-studio` branch and launching the Qt
+entry point below, choose LIVE and perform these checks:
+
+1. On Studio, click Manual, then Music. Confirm Music is highlighted and starts
+   only through its existing explicit action. Use audio output on Windows.
+2. Click the Master Screen selector. Confirm navigation to Screen, Movie/Gaming
+   controls visible, Music stopped, and Screen highlighted. No screen capture or
+   Bluetooth/Hue connection should start merely from selecting Screen.
+3. Return to Studio through navigation. Screen remains highlighted. Click Manual:
+   Manual becomes highlighted and output ownership returns to manual controls.
+4. Select Screen again, explicitly Start Movie, return to Studio, and confirm only
+   Screen is highlighted. Re-click Screen: reopen its page without restarting
+   capture. Repeat with Gaming.
+5. During Movie/Gaming return to Studio and click Manual. Capture stops cleanly;
+   then click Music and confirm Music/Screen never own output together.
+6. With no devices connected, repeat the selector sequence. No connections start.
+   With devices explicitly connected, verify manual colors restore on leaving
+   Music/Screen. Physical-device acceptance remains pending.
+
 ## Install and launch (PowerShell)
 
 The Screen sprint is available on `origin/development/qt-studio`. Before testing,
@@ -146,3 +175,10 @@ The launcher regression failed before the page-placement correction and passes
 after it. One existing fake-BLE write-spacing assertion failed on the first full
 run; it passed unchanged on recheck and on the final full-suite rerun. Windows
 verification of the UI correction remains pending.
+
+The mode-selector fix passed 332 tests (34 Screen tests plus 298 regressions),
+DEMO smoke and a real Linux MSS launcher smoke using Screen/Manual selector
+clicks. Tests cover physical Qt clicks through Manual→Music→Screen→Manual,
+Movie/Gaming styling, no automatic capture/connections, queued-start cancellation
+and late audio error reporting without losing Screen selection. Windows and
+physical-device acceptance of this selector fix remain pending.

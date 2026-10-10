@@ -36,12 +36,29 @@ class ScreenLiveWindow(MusicLiveWindow):
         self.screen_preview=VirtualLightPreview();panel.box.addWidget(self.screen_preview)
         self.pages.widget(NAVIGATION.index('Screen')).widget().layout().insertWidget(1,panel)
         self.page_notes['Screen'].setText('LIVE MSS capture runs in the background. Monitor, intensity and saturation persist; launch stays idle. Protected video may appear black. Preview is read-only.')
-        self.master.modes['Screen'].clicked.connect(lambda:self.c.navigate('Screen'))
+        self.master.modes['Screen'].clicked.connect(self.select_screen)
         self.master.modes['Manual'].clicked.connect(self.stop_screen)
         self.stop_shortcut.activated.connect(self.stop_screen)
         self.monitor.currentIndexChanged.connect(self.monitor_changed)
         self.screen_timer=QTimer(self);self.screen_timer.setInterval(33);self.screen_timer.timeout.connect(self.poll_screen);self.screen_timer.start()
-        self._saved_monitor=values['monitor'];self.screen_settings_changed();self.refresh_monitors();self.live_controls()
+        self._saved_monitor=values['monitor'];self.screen_settings_changed();self.refresh_monitors()
+        self.c.changed.connect(self.sync_mode_selector);self.live_controls()
+
+    def select_screen(self):
+        if self._closing:return
+        # Opening Screen is an explicit mode selection, not a capture request.
+        # Preserve an already-running Movie/Gaming capture when reopening its UI.
+        mode=self.c.state.mode if self.c.adapter.screen_active else 'Screen'
+        if not self.c.adapter.screen_active:self._pending_screen_mode=None
+        self._pending_music=False
+        MusicLiveWindow.stop_music(self)
+        self.c.state.mode=mode
+        self.c.navigate('Screen');self.live_controls()
+
+    def sync_mode_selector(self):
+        a=self.c.adapter
+        mode='Screen' if a.screen_active or self.c.state.mode=='Screen' else 'Music' if a.music_active else 'Manual'
+        for name,control in self.master.modes.items():assign(control,name==mode)
 
     def screen_preferences(self):
         if not hasattr(self,'screen_runtime'):return self.preferences['screen']
@@ -121,7 +138,11 @@ class ScreenLiveWindow(MusicLiveWindow):
 
     def poll_music(self):
         if getattr(self.c.adapter,'screen_active',False):self.music_timer.stop();return
+        idle_screen=self.c.state.mode=='Screen' and not self.c.adapter.music_active and not self._closing
         super().poll_music()
+        # Retain the selected workspace while still reporting late audio errors.
+        if idle_screen and self.c.state.mode=='Manual':
+            self.c.state.mode='Screen';self.c.changed.emit()
 
     def live_controls(self):
         super().live_controls()
@@ -132,7 +153,7 @@ class ScreenLiveWindow(MusicLiveWindow):
         self.refresh_monitors_button.setEnabled(not self._closing and not r.busy and not r.scanning)
         self.monitor.setEnabled(not self._closing and not r.scanning)
         self.master.modes['Screen'].setEnabled(not self._closing)
-        assign(self.master.modes['Screen'],self.c.adapter.screen_active)
+        self.sync_mode_selector()
         for control in (self.screen_intensity,self.screen_saturation):control.setEnabled(not self._closing)
         frame=self._last_screen_frame
         if self.c.adapter.screen_active and frame and time.monotonic()-frame[2]<=1:
