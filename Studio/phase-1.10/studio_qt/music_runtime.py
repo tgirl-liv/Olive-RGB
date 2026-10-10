@@ -3,6 +3,7 @@ import threading
 import re
 import math
 import time
+from .capture_diagnostics import bind,emit
 from .preferences import PROFILES
 from .spectrum_data import SpectrumMailbox
 from .music_presets import MGK_PALETTES
@@ -62,19 +63,23 @@ class MusicRuntime:
             self.wanted = True;self.frame = None;self.error = '';self.message = 'Opening default output loopback…'
             self.started_at=time.monotonic();self.capture_source=''
             self.thread = threading.Thread(target=self._run, args=(generation,profile,sensitivity,smoothing,palette), name='Music lifecycle', daemon=True)
+            emit('music.runtime.request',generation)
             self.thread.start();return True
 
     def _run(self, generation, profile, sensitivity, smoothing, palette):
+        bind(generation);emit('music.lifecycle.begin')
         def log(message):
             with self.lock:
                 if generation != self.generation:return
                 self.message = str(message)
                 if self.message.startswith('Listening to:'):self.capture_source=self.message
-                if 'error' in str(message).lower():self.error = str(message)
+                if 'error' in str(message).lower():
+                    self.error = str(message);emit('music.lifecycle.error')
         def frame(value):
             with self.lock:
                 accepted=self.wanted and generation == self.generation
-                if accepted:self.frame = value
+                if accepted:
+                    self.frame = value;emit('music.frame.mailbox',generation,interval=1,silence=value.energy<=1e-6)
                 response=self._response if accepted and self._response!=self._applied_response else None
                 if response is not None:self._applied_response=response
             if accepted and hasattr(engine,'publish_spectrum'):engine.publish_spectrum(value,self.spectrum,generation)
@@ -84,6 +89,7 @@ class MusicRuntime:
         try:
             engine = self.factory(lambda *a:None,lambda *a:None,lambda:None,log)
             engine.analysis_callback = frame
+            engine.diagnostic_generation=generation
             with self.lock:
                 self.engine = engine
                 engine.colors=dict(self._palette)
@@ -97,6 +103,7 @@ class MusicRuntime:
         except Exception as error:log(f'Audio error: {type(error).__name__}: {error}')
         finally:
             with self.lock:self.wanted = False;self.engine = None
+            emit('music.lifecycle.finished',generation)
 
     @staticmethod
     def _apply_response(engine,response):
@@ -117,6 +124,7 @@ class MusicRuntime:
             if self.engine is not None:self.engine.colors=dict(value)
 
     def stop(self):
+        emit('music.stop.request',self.generation)
         with self.lock:
             self.wanted = False;self.frame = None;self.started_at=None;self.error=''
             self.spectrum.reset()

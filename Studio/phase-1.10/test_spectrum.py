@@ -93,7 +93,11 @@ class SpectrumTests(unittest.TestCase):
         return output,meters,mailbox.take()
 
     def test_inherited_capture_and_lighting_are_identical(self):
-        self.assertIs(SpectrumMusicEngine._run,production.MusicEngine._run)
+        # The observer adds thread-scoped COM, but delegates the unchanged loop.
+        with patch('studio_qt.spectrum_engine.audio_apartment') as apartment,patch.object(production.MusicEngine,'_run') as capture:
+            engine=SpectrumMusicEngine(lambda *a:None,lambda *a:None,lambda:None,lambda *a:None)
+            engine._run();capture.assert_called_once_with(engine)
+            apartment.assert_called_once();apartment.return_value.__enter__.assert_called_once();apartment.return_value.__exit__.assert_called_once()
         self.assertIs(SpectrumMusicEngine.start,production.MusicEngine.start)
         self.assertIs(SpectrumMusicEngine.stop,production.MusicEngine.stop)
         original,meters,_=self.run_engine(production.MusicEngine)

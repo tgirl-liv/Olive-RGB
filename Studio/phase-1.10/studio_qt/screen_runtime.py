@@ -2,6 +2,7 @@
 import threading
 import time
 import math
+from .capture_diagnostics import bind,emit
 
 
 def validate_settings(monitor,intensity,saturation):
@@ -14,6 +15,8 @@ def validate_settings(monitor,intensity,saturation):
 def engine_factory(rgb,preview,log,controls):
     from .screen_engine import ScreenEngine
     class CaptureEngine(ScreenEngine):
+        def _run(self,*args):
+            bind(getattr(self,'diagnostic_generation',0));return ScreenEngine._run(self,*args)
         def _still_active(self,generation):
             active=super()._still_active(generation)
             if active:self.intensity,self.saturation=controls()
@@ -49,12 +52,15 @@ class ScreenRuntime:
     def refresh_monitors(self):
         if self.closed or self.scanning or self.busy:return False
         def scan():
+            bind(self.generation);emit('screen.scan.begin')
             try:
                 monitors=self.scanner()
                 if not monitors:raise RuntimeError('No capturable monitors found')
                 with self.lock:self.monitors=monitors;self.scan_error=''
+                emit('screen.scan.ready',count=len(monitors))
             except Exception as error:
                 with self.lock:self.monitors=[];self.scan_error=f'Monitor discovery failed: {type(error).__name__}: {error}'
+                emit('screen.scan.failed.'+type(error).__name__)
         self.scan_thread=threading.Thread(target=scan,name='Screen monitor discovery',daemon=True);self.scan_thread.start();return True
 
     def start(self,mode):
@@ -65,22 +71,26 @@ class ScreenRuntime:
             self.wanted=True;self.frame=None;self.error='';self.message='Opening screen capture…'
             self.started_at=time.monotonic()
             self.thread=threading.Thread(target=self._run,args=(generation,mode,monitor),name='Screen lifecycle',daemon=True)
+            emit('screen.runtime.request',generation,monitor=monitor,movie=mode=='Movie')
             self.thread.start();return True
 
     def _run(self,generation,mode,monitor):
+        bind(generation);emit('screen.lifecycle.begin')
         def log(message):
             with self.lock:
                 if generation!=self.generation:return
                 self.message=str(message)
-                if 'error' in self.message.lower():self.error=self.message
+                if 'error' in self.message.lower():
+                    self.error=self.message;emit('screen.lifecycle.error')
         def output(*rgb):
             with self.lock:
-                if self.wanted and generation==self.generation:self.frame=(tuple(rgb),mode,time.monotonic())
+                if self.wanted and generation==self.generation:
+                    self.frame=(tuple(rgb),mode,time.monotonic());emit('screen.frame.mailbox',generation,interval=1)
         try:
             engine=self.factory(output,lambda *args:None,log,self.controls)
             # Only the lifecycle thread starts or joins capture. Qt never waits.
             with self.lock:
-                self.engine=engine
+                self.engine=engine;engine.diagnostic_generation=generation
                 if not self.wanted or generation!=self.generation:return
                 engine.intensity,engine.saturation=self.settings[1:]
                 engine.start(mode,monitor)
@@ -90,8 +100,10 @@ class ScreenRuntime:
             with self.lock:
                 self.engine=None
                 if generation==self.generation:self.wanted=False
+            emit('screen.lifecycle.finished',generation)
 
     def stop(self):
+        emit('screen.stop.request',self.generation)
         with self.lock:
             self.generation+=1;self.wanted=False;self.frame=None;self.started_at=None;self.error=''
             if self.engine is not None:self.engine.stop()

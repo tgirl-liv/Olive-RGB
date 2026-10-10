@@ -1,7 +1,7 @@
 """Verbatim Tkinter ScreenEngine, isolated from Tk and hardware imports."""
 import threading,time
 import numpy as np
-import mss
+from . import native_capture as mss
 
 class ScreenEngine:
     """Known-good MSS capture path for Movie and Gaming modes."""

@@ -1,5 +1,6 @@
 """Qt owns rendering/routing; production capture reports into one bounded mailbox."""
 import time
+from .capture_diagnostics import emit
 from pathlib import Path
 import weakref
 from shiboken6 import isValid
@@ -242,10 +243,12 @@ class MusicLiveWindow(DualLiveWindow):
     def poll_music(self):
         frame,message,error,wanted=self.runtime.take()
         spectrum=self.runtime.take_spectrum()
+        emit('music.qt.poll',self.runtime.generation,interval=1,frame=frame is not None,spectrum=spectrum is not None,wanted=wanted,error=bool(error),busy=self.runtime.busy)
         if self._closing:
             if not self.runtime.busy and self._cleanup_done:self.close()
             return
         if not error and wanted and frame is None and self.c.adapter.last_frame is None and self.runtime.started_at is not None and time.monotonic()-self.runtime.started_at>5:
+            emit('music.startup.timeout',self.runtime.generation,elapsed_ms=round((time.monotonic()-self.runtime.started_at)*1000),no_first_frame=True,busy=self.runtime.busy)
             error='Audio startup timed out: no recorded audio frames from Windows default output loopback. Check the default output device and audio service.'
         if not wanted and not error and self.runtime.started_at is not None:
             error='Audio capture ended'+(' before the first measured frame' if self.c.adapter.last_frame is None else '')+' · '+message
@@ -255,8 +258,10 @@ class MusicLiveWindow(DualLiveWindow):
             self.reactor.reset_live()
         elif frame is not None and wanted:
             if not self.c.adapter.music_active:
+                emit('music.qt.first_frame',self.runtime.generation,silence=frame.energy<=1e-6,spectrum=spectrum is not None,age_ms=round((time.monotonic()-frame.timestamp)*1000))
                 self.c.adapter.start_music(self.harmony.currentText(),self.separation.value()/100)
                 self.c.state.mode='Music';self.c.changed.emit()
+            emit('music.router.apply',self.runtime.generation,interval=1,silence=frame.energy<=1e-6)
             self.c.adapter.apply_frame(frame)
             self.reactor.set_live_frame(frame)
             self.music_status.setText(('LIVE · capture running · silence' if frame.energy<=1e-6 else f'LIVE · RMS {frame.energy:.4f}')+' · '+self.runtime.capture_source+' · '+('BEAT · ' if frame.beat else '')+'RGB #'+''.join(f'{c:02X}' for c in frame.rgb))
@@ -264,7 +269,8 @@ class MusicLiveWindow(DualLiveWindow):
         elif wanted and time.monotonic()-self.c.adapter.last_frame.timestamp>1:
             self.music_status.setText('Waiting for fresh audio data · Stop remains available')
             self.reactor.clear_live_frame()
-        if spectrum is not None and wanted and self.c.adapter.music_active:self.reactor.set_spectrum_frame(spectrum)
+        if spectrum is not None and wanted and self.c.adapter.music_active:
+            self.reactor.set_spectrum_frame(spectrum);emit('music.visualizer.update',self.runtime.generation,interval=1,accepted=self.reactor.spectrum_frame is spectrum)
         self.live_controls()
         if not self.runtime.busy and not self.c.adapter.music_active:
             if not error and self.music_status.text()=='Stopping audio…':self.music_status.setText('Audio stopped · manual control restored')
@@ -283,6 +289,7 @@ class MusicLiveWindow(DualLiveWindow):
                     status='Read-only · '+('connected' if a.connected else 'disconnected; no light required')
                     if not a.participation['Corner']:status+=' · Music participation off; calculated only'
                     self.album.update_light_preview(a.corner_music_rgb(rgb),frame.rgb,status)
+                    emit('music.preview.update',self.runtime.generation,interval=1,output_available=self.album.virtual_rgb is not None)
             else:self.album.update_light_preview(None,None,'Waiting for fresh Music data.' if active else 'Start Music for measured output.')
         self.music_start.setEnabled(not self._closing and not self.runtime.busy)
         self.music_stop.setEnabled(not self._closing and (active or self.runtime.busy))

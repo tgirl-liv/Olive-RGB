@@ -6,6 +6,8 @@ This facade only validates/resolves the backend endpoint on that capture thread.
 import threading
 import sys
 import soundcard
+from .capture_diagnostics import emit
+from .native_capture import Loopback
 
 
 class LoopbackAudio:
@@ -13,9 +15,12 @@ class LoopbackAudio:
         self.backend=backend;self.local=threading.local()
 
     def default_speaker(self):
+        emit('music.endpoint.default.begin')
         speaker=self.backend.default_speaker()
+        emit('music.endpoint.default.return',available=speaker is not None)
         if speaker is None or not getattr(speaker,'name',None) or getattr(speaker,'id',None) is None:
             raise RuntimeError('No valid default audio output device. Select an enabled Windows playback device.')
+        emit('music.endpoint.default.validated')
         self.local.speaker=speaker
         return speaker
 
@@ -25,9 +30,12 @@ class LoopbackAudio:
         if speaker is None:raise RuntimeError('No default output was selected for loopback capture')
         # SoundCard name/fuzzy matching includes physical inputs. WASAPI loopbacks
         # use the playback endpoint ID; exact identity avoids ambiguous names.
+        emit('music.endpoints.enumeration.begin')
         inputs=self.backend.all_microphones(include_loopback=True)
+        emit('music.endpoints.enumeration.ready',count=len(inputs),loopbacks=sum(bool(getattr(d,'isloopback',False)) for d in inputs))
         matches=[device for device in inputs if getattr(device,'isloopback',False) and device.id==speaker.id]
-        if len(matches)==1:return matches[0]
+        emit('music.endpoint.match',exact_matches=len(matches))
+        if len(matches)==1:return Loopback(matches[0])
         if sys.platform=='win32':
             raise RuntimeError(f'No enabled loopback matches Windows default output {speaker.name} ({speaker.id})')
         # PulseAudio monitor IDs differ from sink IDs. Permit its existing name
@@ -37,7 +45,11 @@ class LoopbackAudio:
             raise RuntimeError(f'Loopback unavailable for {speaker.name} ({speaker.id}): {error}') from error
         if not getattr(device,'isloopback',False):
             raise RuntimeError(f'No valid output loopback for {speaker.name} ({speaker.id}); backend selected a physical microphone')
-        return device
+        return Loopback(device)
 
+
+if sys.platform=='win32':
+    initializer=getattr(sys.modules.get('soundcard.mediafoundation'),'_com',None)
+    emit('music.backend.import',com_owned_at_import=bool(getattr(initializer,'com_loaded',False)))
 
 audio=LoopbackAudio(soundcard)

@@ -1,5 +1,6 @@
 """LIVE Movie/Gaming controls. Capture threads publish snapshots; Qt routes them."""
 import time
+from .capture_diagnostics import emit
 from PySide6.QtCore import QTimer,QSignalBlocker
 from PySide6.QtWidgets import QComboBox,QHBoxLayout
 from studio_ui.state import NAVIGATION
@@ -46,6 +47,7 @@ class ScreenLiveWindow(MusicLiveWindow):
     def request_mode(self,mode,restart=False):
         """GUI-only latest request. Never start a new capture until both drain."""
         if self._closing:return
+        emit('mode.request',music=mode=='Music',screen=mode in ('Screen','Movie','Gaming'),manual=mode=='Manual')
         if mode=='Screen':mode=self._screen_mode
         if mode not in ('Manual','Music','Movie','Gaming'):raise ValueError('Unsupported mode')
         if mode in ('Movie','Gaming'):self.c.navigate('Screen')
@@ -107,6 +109,7 @@ class ScreenLiveWindow(MusicLiveWindow):
         else:super().stop_music()
 
     def activation_failed(self,message,status):
+        emit('mode.activation.failed',music=status is self.music_status)
         self.request_mode('Manual');status.setText(message)
 
     def poll_screen(self):
@@ -141,10 +144,13 @@ class ScreenLiveWindow(MusicLiveWindow):
                     self.c.state.mode='Manual';self.c.changed.emit()
                 except Exception as error:self.activation_failed(f'Screen activation failed: {error}',self.screen_status)
         frame,message,error,wanted=r.take()
+        emit('screen.qt.poll',r.generation,interval=1,frame=frame is not None,wanted=wanted,busy=r.busy,error=bool(error))
         if wanted and not self.c.adapter.screen_active and not error:
             if frame is not None and 0<=time.monotonic()-frame[2]<=1:
+                emit('screen.qt.first_frame',r.generation,age_ms=round((time.monotonic()-frame[2])*1000))
                 self.c.adapter.start_screen();self.c.state.mode=frame[1];self.c.changed.emit()
             elif r.started_at is not None and time.monotonic()-r.started_at>5:
+                emit('screen.startup.timeout',r.generation,elapsed_ms=round((time.monotonic()-r.started_at)*1000),no_first_frame=True,busy=r.busy)
                 error='Screen startup timed out: no captured frames. Check monitor availability and capture permissions.'
             else:self.screen_status.setText(message+' · waiting for first captured frame')
         if not wanted and not error and r.started_at is not None and not self.c.adapter.screen_active:
@@ -154,6 +160,7 @@ class ScreenLiveWindow(MusicLiveWindow):
         elif self.c.adapter.screen_active:
             if not wanted:self.activation_failed('Screen capture stopped · manual control restored',self.screen_status)
             elif frame is not None and 0<=time.monotonic()-frame[2]<=1:
+                emit('screen.router.apply',r.generation,interval=1,age_ms=round((time.monotonic()-frame[2])*1000))
                 self._last_screen_frame=frame;self.c.adapter.apply_screen(frame[0]);self.screen_status.setText(frame[1]+' · measured screen RGB · '+message)
             elif self._last_screen_frame and time.monotonic()-self._last_screen_frame[2]>1:
                 self.activation_failed('Screen data stale · capture stopped; select Screen to retry',self.screen_status)
@@ -186,6 +193,7 @@ class ScreenLiveWindow(MusicLiveWindow):
         frame=self._last_screen_frame
         if self.c.adapter.screen_active and frame and time.monotonic()-frame[2]<=1:
             self.screen_preview.update_light_preview(self.c.adapter.corner_music_rgb(frame[0]),frame[0],'Read-only Bluetooth-channel output · '+('connected' if self.c.adapter.connected else 'disconnected; no light required'))
+            emit('screen.preview.update',r.generation,interval=1,output_available=self.screen_preview.virtual_rgb is not None)
         else:self.screen_preview.update_light_preview(None,None,'Waiting for measured screen data.' if self.c.adapter.screen_active else 'Screen stopped.')
         if self.c.adapter.screen_active and self.c.adapter.owns(self.c.state.selected_channel):
             self.inspector.status.setText('LIVE · Screen owns color')

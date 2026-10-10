@@ -1,6 +1,7 @@
 """Qt signals around the unchanged, framework-neutral mock state model."""
 import time
 import colorsys
+from .capture_diagnostics import emit
 from PySide6.QtCore import QObject, Signal
 from PySide6.QtGui import QColor
 from studio_ui.state import StudioState
@@ -23,6 +24,7 @@ class StudioController(QObject):
 
     def set(self, name, value):
         if getattr(self.adapter,"live",False) and name=="mode":
+            emit('controller.mode.request',music=value=='Music',screen=value=='Screen',manual=value=='Manual')
             handler=getattr(self,"mode_request",None)
             if handler is not None:
                 handler(value);return

@@ -34,7 +34,7 @@ class Capture:
 
 
 class ScreenAnalysisTests(unittest.TestCase):
-    def setUp(self):self.patch=patch('studio_qt.screen_engine.mss.MSS',Capture);self.patch.start();Capture.rgb=(200,50,25);Capture.delay=0;Capture.calls=[]
+    def setUp(self):self.patch=patch('mss.MSS',Capture);self.patch.start();Capture.rgb=(200,50,25);Capture.delay=0;Capture.calls=[]
     def tearDown(self):self.patch.stop()
     def render(self,mode,intensity=1.,saturation=1.25,count=1):
         colors=[];messages=[];previews=[]
@@ -73,7 +73,7 @@ class ScreenAnalysisTests(unittest.TestCase):
 class ScreenRuntimeTests(unittest.TestCase):
     def setUp(self):
         Capture.calls=[];Capture.delay=0;Capture.rgb=(200,50,25)
-        self.patch=patch('studio_qt.screen_engine.mss.MSS',Capture);self.patch.start();self.runtimes=[]
+        self.patch=patch('mss.MSS',Capture);self.patch.start();self.runtimes=[]
     def tearDown(self):
         for r in self.runtimes:r.close()
         for r in self.runtimes:
@@ -119,7 +119,7 @@ class ScreenWindowTests(unittest.TestCase):
     def setUpClass(cls):fixtures.MusicTests.setUpClass()
     def setUp(self):
         self.f=fixtures.MusicTests();self.f.setUp();self.windows=[];Capture.rgb=(200,50,25);Capture.delay=0;Capture.calls=[]
-        self.patch=patch('studio_qt.screen_engine.mss.MSS',Capture);self.patch.start()
+        self.patch=patch('mss.MSS',Capture);self.patch.start()
     def tearDown(self):
         try:
             for w in self.windows:w.close()
@@ -403,7 +403,7 @@ class ScreenWindowTests(unittest.TestCase):
 
     def test_selector_production_screen_open_failure_reports_actual_error(self):
         w=self.window()
-        with patch('studio_qt.screen_engine.mss.MSS',side_effect=PermissionError('Desktop capture denied')):
+        with patch('mss.MSS',side_effect=PermissionError('Desktop capture denied')):
             w.master.modes['Screen'].click()
             self.wait(lambda:'Desktop capture denied' in w.screen_status.text())
             self.assertFalse(w.c.adapter.screen_active);self.assertEqual(w.c.state.mode,'Manual')
@@ -539,7 +539,7 @@ class ScreenLauncherTests(unittest.TestCase):
         watchdog=QTimer();watchdog.setSingleShot(True);watchdog.timeout.connect(timeout);watchdog.start(10000)
         Capture.calls=[];Capture.delay=0
         try:
-            with tempfile.TemporaryDirectory() as directory,patch('studio_qt.screen_engine.mss.MSS',Capture),patch.object(launcher,'default_path',return_value=Path(directory)/'workspace.json'),patch.object(launcher,'preferences_path_default',return_value=Path(directory)/'preferences-v1.json'):
+            with tempfile.TemporaryDirectory() as directory,patch('mss.MSS',Capture),patch.object(launcher,'default_path',return_value=Path(directory)/'workspace.json'),patch.object(launcher,'preferences_path_default',return_value=Path(directory)/'preferences-v1.json'):
                 result=launcher.main()
             self.assertFalse(errors,str(errors));self.assertEqual(result,0);self.assertEqual(stage,3);self.assertEqual(len(windows),1)
         finally:
