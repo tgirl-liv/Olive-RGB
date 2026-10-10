@@ -32,7 +32,7 @@ class ScreenRuntime:
         self.lock=threading.RLock();self.thread=None;self.engine=None;self.scan_thread=None
         self.generation=0;self.wanted=False;self.closed=False;self.frame=None
         self.message='Screen stopped';self.error='';self.monitors=None;self.scan_error=''
-        self.settings=(1,1.,1.25)
+        self.settings=(1,1.,1.25);self.started_at=None
 
     @property
     def busy(self):return self.thread is not None and self.thread.is_alive()
@@ -63,6 +63,7 @@ class ScreenRuntime:
             if self.closed or self.busy:return False
             self.generation+=1;generation=self.generation;monitor=self.settings[0]
             self.wanted=True;self.frame=None;self.error='';self.message='Opening screen capture…'
+            self.started_at=time.monotonic()
             self.thread=threading.Thread(target=self._run,args=(generation,mode,monitor),name='Screen lifecycle',daemon=True)
             self.thread.start();return True
 
@@ -92,7 +93,7 @@ class ScreenRuntime:
 
     def stop(self):
         with self.lock:
-            self.generation+=1;self.wanted=False;self.frame=None
+            self.generation+=1;self.wanted=False;self.frame=None;self.started_at=None;self.error=''
             if self.engine is not None:self.engine.stop()
 
     def close(self):

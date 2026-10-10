@@ -3,6 +3,7 @@ import ast
 import threading
 import time
 import tempfile
+from types import SimpleNamespace
 from pathlib import Path
 import unittest
 from unittest.mock import patch
@@ -127,7 +128,7 @@ class ScreenWindowTests(unittest.TestCase):
         finally:self.patch.stop()
     def wait(self,predicate):self.f.wait(predicate)
     def window(self,**kwargs):
-        w=ScreenLiveWindow(worker_factory=self.f.f.corner.factory,hue_factory=self.f.f.hue_factory,hue_identity={'name':'Tv lamp'},engine_factory=self.f.factory,**kwargs)
+        w=ScreenLiveWindow(worker_factory=self.f.f.corner.factory,hue_factory=self.f.f.hue_factory,hue_identity={'name':'Tv lamp'},engine_factory=kwargs.pop('engine_factory',self.f.factory),**kwargs)
         self.windows.append(w);self.f.windows.append(w);self.f.f.windows.append(w);self.f.f.corner.windows.append(w);self.f.f.adapters.append(w.c.adapter);self.f.f.corner.adapters.append(w.c.adapter)
         w.show();self.wait(lambda:w.monitor.count()>0);return w
     def start(self,w,mode='Movie'):w.start_screen(mode);self.wait(lambda:w.screen_preview.virtual_rgb is not None)
@@ -211,7 +212,7 @@ class ScreenWindowTests(unittest.TestCase):
         QTest.mouseClick(w.master.modes['Music'],Qt.MouseButton.LeftButton)
         self.wait(lambda:a.last_frame is not None);self.assertTrue(a.owns('Corner'))
         QTest.mouseClick(w.master.modes['Screen'],Qt.MouseButton.LeftButton)
-        self.assertEqual(w.c.state.page,'Screen');self.assertEqual(w.c.state.mode,'Movie')
+        self.assertEqual(w.c.state.page,'Screen');self.assertEqual(w.c.state.mode,'Manual')
         self.assertFalse(a.music_active)
         self.wait(lambda:a.screen_active and w.screen_preview.virtual_rgb is not None)
         self.assertTrue(a.owns('Corner'));self.assertIsNone(w._pending_screen_mode)
@@ -330,6 +331,141 @@ class ScreenWindowTests(unittest.TestCase):
         self.assertTrue(page.isAncestorOf(w.music_start));self.assertTrue(page.isAncestorOf(w.music_stop))
         self.assertFalse(w.music_start.isVisible());w.c.navigate('Music')
         self.assertTrue(w.music_start.isVisible());self.assertTrue(w.music_stop.isVisible())
+
+    def test_selector_production_audio_opens_one_loopback_and_delivers_fft_and_preview(self):
+        from studio_qt import music_engine as production
+        from studio_qt.audio_capture import LoopbackAudio
+        from studio_qt.music_runtime import engine_factory
+        gate=threading.Event();entered=threading.Event();opens=[];closed=[];samples={'amplitude':.15}
+        class Recorder:
+            def __enter__(self):opens.append(threading.get_ident());entered.set();return self
+            def __exit__(self,*args):closed.append(True)
+            def record(self,numframes):
+                gate.wait(2)
+                mono=np.sin(np.arange(numframes)*2*np.pi*1000/48000)*samples['amplitude']
+                return np.column_stack([mono,mono])
+        loopback=SimpleNamespace(id='playback-id',name='Windows test output',isloopback=True,recorder=lambda **kwargs:Recorder())
+        wrong=SimpleNamespace(id='mic-id',name='Windows test output',isloopback=False)
+        backend=SimpleNamespace(default_speaker=lambda:SimpleNamespace(id='playback-id',name='Windows test output'),
+            all_microphones=lambda **kwargs:[wrong,loopback],get_microphone=lambda *args,**kwargs:wrong)
+        with patch.object(production,'sc',LoopbackAudio(backend)):
+            w=self.window(engine_factory=engine_factory)
+            try:
+                w.master.modes['Music'].click();self.wait(entered.is_set)
+                self.assertFalse(w.c.adapter.music_active);self.assertEqual(w.c.state.mode,'Manual')
+                self.assertIsNone(w.c.adapter.last_frame)
+                for _ in range(4):w.master.modes['Music'].click()
+                gate.set();self.wait(lambda:w.reactor.spectrum_frame is not None and max(w.reactor.levels)>.1)
+                self.assertTrue(w.c.adapter.music_active);self.assertEqual(w.c.state.mode,'Music')
+                self.assertEqual(len(w.reactor.spectrum_frame.magnitudes),72)
+                self.assertIsNotNone(w.album.virtual_rgb);self.assertEqual(w.album.virtual_rgb,w.c.adapter.corner_music_rgb(w.c.adapter.music_colors['Corner']))
+                self.assertEqual(len(opens),1);self.assertNotEqual(opens[0],threading.get_ident())
+                self.assertIn('Windows test output',w.music_status.text())
+                samples['amplitude']=0;self.wait(lambda:'capture running · silence' in w.music_status.text())
+                self.assertTrue(w.c.adapter.music_active);self.assertEqual(w.c.adapter.last_frame.energy,0)
+                audio_thread=w.runtime.thread;w.master.modes['Screen'].click()
+                self.wait(lambda:w.screen_preview.virtual_rgb is not None)
+                self.assertFalse(audio_thread.is_alive());self.assertEqual(closed,[True])
+                screen_thread=w.screen_runtime.thread;samples['amplitude']=.15
+                w.master.modes['Music'].click()
+                self.wait(lambda:w.reactor.spectrum_frame is not None and w.c.adapter.music_active)
+                self.assertFalse(screen_thread.is_alive());self.assertEqual(len(opens),2)
+                w.master.modes['Manual'].click();self.wait(lambda:not w.runtime.busy)
+                self.assertEqual(closed,[True,True]);self.assertFalse(self.f.f.corner.workers);self.assertIsNone(w.c.adapter.hue.thread)
+            finally:gate.set();w.stop_music();self.wait(lambda:not w.runtime.busy)
+
+    def test_selector_real_audio_reports_missing_default_device(self):
+        from studio_qt import music_engine as production
+        from studio_qt.audio_capture import LoopbackAudio
+        from studio_qt.music_runtime import engine_factory
+        backend=SimpleNamespace(default_speaker=lambda:None)
+        with patch.object(production,'sc',LoopbackAudio(backend)):
+            w=self.window(engine_factory=engine_factory);w.master.modes['Music'].click()
+            self.wait(lambda:'No valid default audio output device' in w.music_status.text())
+            self.assertFalse(w.c.adapter.music_active);self.assertEqual(w.c.state.mode,'Manual')
+            self.assertTrue(w.master.modes['Manual'].isChecked());self.assertFalse(self.f.f.corner.workers)
+
+    def test_selector_production_recorder_open_failure_reports_actual_error(self):
+        from studio_qt import music_engine as production
+        from studio_qt.audio_capture import LoopbackAudio
+        from studio_qt.music_runtime import engine_factory
+        class DeniedRecorder:
+            def __enter__(self):raise OSError('WASAPI endpoint access denied')
+            def __exit__(self,*args):pass
+        loopback=SimpleNamespace(id='speaker-id',isloopback=True,recorder=lambda **kwargs:DeniedRecorder())
+        backend=SimpleNamespace(default_speaker=lambda:SimpleNamespace(id='speaker-id',name='Default output'),
+            all_microphones=lambda **kwargs:[loopback])
+        with patch.object(production,'sc',LoopbackAudio(backend)):
+            w=self.window(engine_factory=engine_factory);w.master.modes['Music'].click()
+            self.wait(lambda:'WASAPI endpoint access denied' in w.music_status.text())
+            self.assertFalse(w.c.adapter.music_active);self.assertEqual(w.c.state.mode,'Manual')
+            self.assertTrue(w.master.modes['Manual'].isChecked());self.assertIsNone(w.album.virtual_rgb)
+
+    def test_selector_production_screen_open_failure_reports_actual_error(self):
+        w=self.window()
+        with patch('studio_qt.screen_engine.mss.MSS',side_effect=PermissionError('Desktop capture denied')):
+            w.master.modes['Screen'].click()
+            self.wait(lambda:'Desktop capture denied' in w.screen_status.text())
+            self.assertFalse(w.c.adapter.screen_active);self.assertEqual(w.c.state.mode,'Manual')
+            self.assertTrue(w.master.modes['Manual'].isChecked());self.assertIsNone(w.screen_preview.virtual_rgb)
+
+    def test_loopback_resolution_rejects_microphones_and_preserves_device_errors(self):
+        from studio_qt.audio_capture import LoopbackAudio
+        speaker=SimpleNamespace(name='Output',id='endpoint')
+        backend=SimpleNamespace(default_speaker=lambda:speaker,all_microphones=lambda **kwargs:[],
+            get_microphone=lambda *args,**kwargs:SimpleNamespace(isloopback=False))
+        audio=LoopbackAudio(backend);audio.default_speaker()
+        with patch('studio_qt.audio_capture.sys.platform','linux'):
+            with self.assertRaisesRegex(RuntimeError,'physical microphone'):audio.get_microphone('Output',True)
+            backend.get_microphone=lambda *args,**kwargs:(_ for _ in ()).throw(OSError('device unplugged'))
+            with self.assertRaisesRegex(RuntimeError,'endpoint.*device unplugged'):audio.get_microphone('Output',True)
+        with patch('studio_qt.audio_capture.sys.platform','win32'):
+            with self.assertRaisesRegex(RuntimeError,'No enabled loopback matches.*endpoint'):audio.get_microphone('Output',True)
+
+    def test_real_screen_selector_waits_for_capture_and_tracks_changed_pixels(self):
+        Capture.delay=.2;w=self.window();w.master.modes['Screen'].click()
+        self.wait(lambda:any(call[0]=='grab' for call in Capture.calls))
+        self.assertFalse(w.c.adapter.screen_active);self.assertEqual(w.c.state.mode,'Manual')
+        self.wait(lambda:w.screen_preview.virtual_rgb is not None)
+        self.assertTrue(w.c.adapter.screen_active);self.assertEqual(w.c.state.mode,'Movie')
+        old=w.screen_preview.virtual_rgb;Capture.rgb=(20,220,35)
+        self.wait(lambda:w.screen_preview.virtual_rgb!=old)
+        self.assertEqual(w.screen_preview.virtual_rgb,w.c.adapter.corner_music_rgb(w.c.adapter.screen_rgb))
+        thread=w.screen_runtime.thread
+        for _ in range(4):w.master.modes['Screen'].click();w.poll_screen()
+        self.assertIs(w.screen_runtime.thread,thread)
+        self.assertEqual(sum(call[0]=='open' for call in Capture.calls),2)  # discovery + one capture
+        self.assertFalse(self.f.f.corner.workers);self.assertIsNone(w.c.adapter.hue.thread)
+        w.master.modes['Manual'].click();self.wait(lambda:not w.screen_runtime.busy)
+        self.assertFalse(w.c.adapter.screen_active)
+
+    def test_audio_startup_timeout_stops_worker_and_restores_manual(self):
+        gate=threading.Event();entered=threading.Event()
+        original=self.f.factory
+        def factory(*args):
+            engine=original(*args)
+            def start():
+                engine.running=True
+                def run():entered.set();gate.wait(2)
+                engine.thread=threading.Thread(target=run);engine.thread.start()
+            engine.start=start;return engine
+        w=self.window(engine_factory=factory)
+        try:
+            w.master.modes['Music'].click();self.wait(entered.is_set)
+            w.runtime.started_at=time.monotonic()-6;w.poll_music()
+            self.assertIn('Audio startup timed out',w.music_status.text())
+            self.assertFalse(w.runtime.wanted);self.assertFalse(w.c.adapter.music_active)
+            self.assertEqual(w.c.state.mode,'Manual');self.assertTrue(w.master.modes['Manual'].isChecked())
+        finally:gate.set();self.wait(lambda:not w.runtime.busy)
+
+    def test_screen_startup_timeout_returns_manual_and_cancels_capture(self):
+        Capture.delay=.25;w=self.window();w.master.modes['Screen'].click()
+        self.wait(lambda:any(call[0]=='grab' for call in Capture.calls))
+        w.screen_runtime.started_at=time.monotonic()-6;w.poll_screen()
+        self.assertIn('Screen startup timed out',w.screen_status.text())
+        self.assertFalse(w.screen_runtime.wanted);self.assertFalse(w.c.adapter.screen_active)
+        self.assertEqual(w.c.state.mode,'Manual');self.assertTrue(w.master.modes['Manual'].isChecked())
+        self.wait(lambda:not w.screen_runtime.busy)
 
     def test_ledble_screen_uses_existing_selected_worker(self):
         from studio_qt import corner_worker

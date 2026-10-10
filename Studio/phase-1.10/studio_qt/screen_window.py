@@ -51,7 +51,7 @@ class ScreenLiveWindow(MusicLiveWindow):
         if mode in ('Movie','Gaming'):self.c.navigate('Screen')
         a=self.c.adapter
         pending=self._pending_screen_mode or ('Music' if self._pending_music else None)
-        active='Music' if a.music_active else self.c.state.mode if a.screen_active else 'Manual'
+        active='Music' if a.music_active or self.runtime.wanted else self._screen_mode if a.screen_active or self.screen_runtime.wanted else 'Manual'
         if not restart and (mode==pending or (pending is None and mode==active and (mode!='Manual' or (self.c.state.mode=='Manual' and not (self.runtime.wanted or self.screen_runtime.wanted))))):
             self.sync_mode_selector();return
         MusicLiveWindow.stop_music(self)
@@ -60,7 +60,7 @@ class ScreenLiveWindow(MusicLiveWindow):
         self._pending_screen_mode=mode if mode in ('Movie','Gaming') else None
         if self._pending_screen_mode:
             self._screen_mode=mode;self.queue_preferences()
-        self.c.state.mode=mode;self.c.changed.emit()
+        self.c.state.mode='Manual';self.c.changed.emit()
         if mode!='Manual':
             status=self.music_status if mode=='Music' else self.screen_status
             status.setText('Waiting for previous capture to stop…')
@@ -130,7 +130,7 @@ class ScreenLiveWindow(MusicLiveWindow):
                 self._pending_music=False
                 try:
                     MusicLiveWindow.start_music(self)
-                    if not self.c.adapter.music_active:raise RuntimeError('Audio activation refused')
+                    if not self.runtime.wanted:raise RuntimeError(self.runtime.error or 'Audio activation refused')
                 except Exception as error:self.activation_failed(f'Audio activation failed: {error}',self.music_status)
             elif self._pending_screen_mode and not r.scanning:
                 mode=self._pending_screen_mode;self._pending_screen_mode=None
@@ -138,12 +138,21 @@ class ScreenLiveWindow(MusicLiveWindow):
                     if self.monitor.currentData() is None:raise RuntimeError(r.scan_error or 'No capturable monitor available')
                     self.screen_settings_changed()
                     if not r.start(mode):raise RuntimeError('Screen activation refused')
-                    self.c.adapter.start_screen();self.c.state.mode=mode;self.c.changed.emit()
+                    self.c.state.mode='Manual';self.c.changed.emit()
                 except Exception as error:self.activation_failed(f'Screen activation failed: {error}',self.screen_status)
         frame,message,error,wanted=r.take()
-        if self.c.adapter.screen_active:
-            if error or not wanted:
-                self.activation_failed(error or 'Screen capture stopped · manual control restored',self.screen_status)
+        if wanted and not self.c.adapter.screen_active and not error:
+            if frame is not None and 0<=time.monotonic()-frame[2]<=1:
+                self.c.adapter.start_screen();self.c.state.mode=frame[1];self.c.changed.emit()
+            elif r.started_at is not None and time.monotonic()-r.started_at>5:
+                error='Screen startup timed out: no captured frames. Check monitor availability and capture permissions.'
+            else:self.screen_status.setText(message+' · waiting for first captured frame')
+        if not wanted and not error and r.started_at is not None and not self.c.adapter.screen_active:
+            error='Screen capture ended before the first captured frame · '+message
+        if error and (wanted or self.c.adapter.screen_active or r.started_at is not None):
+            self.activation_failed(error,self.screen_status)
+        elif self.c.adapter.screen_active:
+            if not wanted:self.activation_failed('Screen capture stopped · manual control restored',self.screen_status)
             elif frame is not None and 0<=time.monotonic()-frame[2]<=1:
                 self._last_screen_frame=frame;self.c.adapter.apply_screen(frame[0]);self.screen_status.setText(frame[1]+' · measured screen RGB · '+message)
             elif self._last_screen_frame and time.monotonic()-self._last_screen_frame[2]>1:
@@ -152,14 +161,14 @@ class ScreenLiveWindow(MusicLiveWindow):
         self.live_controls()
 
     def poll_music(self):
-        if not self._closing and not self.c.adapter.music_active:
+        if not self._closing and not self.c.adapter.music_active and not self.runtime.wanted and self.runtime.started_at is None:
             # Stopped-generation messages cannot cancel a newer mode request.
             self.runtime.take();self.runtime.take_spectrum()
             if not self.runtime.busy:self.music_timer.stop()
             return
-        active=self.c.adapter.music_active
+        running=self.c.adapter.music_active or self.runtime.wanted
         super().poll_music()
-        if active and not self.c.adapter.music_active and not self._closing:
+        if running and not self.runtime.wanted and not self.c.adapter.music_active and not self._closing:
             message=self.music_status.text()
             self.activation_failed(message,self.music_status)
 

@@ -135,7 +135,8 @@ class MusicLiveWindow(DualLiveWindow):
         colors={'colors':self.album.current_palette} if self.album.source.currentText()=='Album artwork' or self.palette.currentData() is not None else {}
         if self.runtime.start(self.profile.currentText(),self.sensitivity.value()/100,self.smoothing.value()/100,self.fallback_palette(),**colors):
             self.music_timer.start()
-            self.c.adapter.start_music(self.harmony.currentText(),self.separation.value()/100);self.c.state.mode='Music';self.c.changed.emit()
+            self.music_status.setText('Opening Windows default output loopback · waiting for measured audio…')
+            self.c.state.mode='Manual';self.c.changed.emit()
         self.live_controls()
 
     def stop_music(self):
@@ -244,14 +245,21 @@ class MusicLiveWindow(DualLiveWindow):
         if self._closing:
             if not self.runtime.busy and self._cleanup_done:self.close()
             return
-        if (error and self.music_status.text()!=error) or (self.c.adapter.music_active and not wanted):
-            self.c.adapter.stop_music();self.c.state.mode='Manual';self.c.changed.emit()
+        if not error and wanted and frame is None and self.c.adapter.last_frame is None and self.runtime.started_at is not None and time.monotonic()-self.runtime.started_at>5:
+            error='Audio startup timed out: no recorded audio frames from Windows default output loopback. Check the default output device and audio service.'
+        if not wanted and not error and self.runtime.started_at is not None:
+            error='Audio capture ended'+(' before the first measured frame' if self.c.adapter.last_frame is None else '')+' · '+message
+        if error or (not wanted and (self.c.adapter.music_active or self.runtime.started_at is not None)):
+            self.runtime.stop();self.c.adapter.stop_music();self.c.state.mode='Manual';self.c.changed.emit()
             self.music_status.setText(error or 'Audio stopped · manual control restored')
             self.reactor.reset_live()
-        elif frame is not None and self.c.adapter.music_active:
+        elif frame is not None and wanted:
+            if not self.c.adapter.music_active:
+                self.c.adapter.start_music(self.harmony.currentText(),self.separation.value()/100)
+                self.c.state.mode='Music';self.c.changed.emit()
             self.c.adapter.apply_frame(frame)
             self.reactor.set_live_frame(frame)
-            self.music_status.setText(f'LIVE · RMS {frame.energy:.4f} · '+('BEAT · ' if frame.beat else '')+'RGB #'+''.join(f'{c:02X}' for c in frame.rgb))
+            self.music_status.setText(('LIVE · capture running · silence' if frame.energy<=1e-6 else f'LIVE · RMS {frame.energy:.4f}')+' · '+self.runtime.capture_source+' · '+('BEAT · ' if frame.beat else '')+'RGB #'+''.join(f'{c:02X}' for c in frame.rgb))
         elif wanted and self.c.adapter.last_frame is None:self.music_status.setText(message)
         elif wanted and time.monotonic()-self.c.adapter.last_frame.timestamp>1:
             self.music_status.setText('Waiting for fresh audio data · Stop remains available')

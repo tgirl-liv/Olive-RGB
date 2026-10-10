@@ -133,9 +133,16 @@ class PreferencesUITests(unittest.TestCase):
         self.assertEqual(w.c.state.mode,'Manual');self.assertTrue(w.open_tab('Setup'));self.assertTrue(w.open_tab('Music'))
         for _,link in w.inspector_links.values():self.assertTrue(link.isEnabled())
         self.assertIn('unavailable',w.page_notes['Screen'].text())
-        with patch.object(w.runtime,'start',return_value=True) as start, patch.object(w.c.adapter,'start_music') as route:
+        with patch.object(w.runtime,'start',return_value=True) as start, patch.object(w.c.adapter,'start_music',wraps=w.c.adapter.start_music) as route:
             w.start_music();start.assert_called_once_with('MGK',2.31,.77,'Charli xcx — BRAT')
+            route.assert_not_called();self.assertEqual(w.c.state.mode,'Manual')
+            from music_coordination import MusicFrame
+            import time
+            measured=MusicFrame((120,30,60),.6,.3,.1,.04,False,time.monotonic())
+            with patch.object(w.runtime,'take',return_value=(measured,'Listening to: test output','',True)):
+                w.poll_music()
             route.assert_called_once_with('Same Color',.64)
+            self.assertTrue(w.c.adapter.music_active);self.assertEqual(w.c.state.mode,'Music')
         w.stop_music();w.close()
         self.assertEqual(PreferencesStore(self.path).load('live')['music'],values['music'])
 

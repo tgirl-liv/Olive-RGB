@@ -234,7 +234,7 @@ class SpectrumWindowTests(unittest.TestCase):
             w.stop_music();f.wait(lambda:not w.runtime.busy)
         self.assertEqual(closed,[True]);self.assertFalse(w.reactor._live_timer.isActive())
     def test_independent_visual_mailbox_delivery_does_not_route_extra_lighting_frames(self):
-        w=self.f.window();w.start_music();self.f.wait(lambda:w.runtime.engine is not None)
+        w=self.f.window();w.start_music();self.f.wait(lambda:w.c.adapter.last_frame is not None)
         w.music_timer.stop();w.reactor.reset_live()
         w.runtime.take()  # consume lighting first, then simulate later FFT publication
         visual=SpectrumFrame(log_magnitudes(*fft_tone()),.04,time.monotonic())

@@ -1,7 +1,7 @@
 """Verbatim production engine and dependencies; no Tk import or engine rewrite."""
 import threading,time,re
 import numpy as np
-import soundcard as sc
+from .audio_capture import audio as sc
 from music_coordination import MusicFrame
 
 DEFAULT_MUSIC_COLORS = {"bass": "#FF0A46", "mids": "#9614FF", "treble": "#00D2FF", "beat": "#FFFFFF"}

@@ -2,6 +2,7 @@
 import threading
 import re
 import math
+import time
 from .preferences import PROFILES
 from .spectrum_data import SpectrumMailbox
 from .music_presets import MGK_PALETTES
@@ -43,6 +44,7 @@ class MusicRuntime:
         self.frame = None
         self.message = 'Stopped'
         self.error = ''
+        self.started_at=None;self.capture_source=''
         self.spectrum=SpectrumMailbox()
         self._palette=None;self._response=None;self._applied_response=None
 
@@ -58,6 +60,7 @@ class MusicRuntime:
             self.generation += 1;generation = self.generation
             self.spectrum.reset(generation)
             self.wanted = True;self.frame = None;self.error = '';self.message = 'Opening default output loopback…'
+            self.started_at=time.monotonic();self.capture_source=''
             self.thread = threading.Thread(target=self._run, args=(generation,profile,sensitivity,smoothing,palette), name='Music lifecycle', daemon=True)
             self.thread.start();return True
 
@@ -66,6 +69,7 @@ class MusicRuntime:
             with self.lock:
                 if generation != self.generation:return
                 self.message = str(message)
+                if self.message.startswith('Listening to:'):self.capture_source=self.message
                 if 'error' in str(message).lower():self.error = str(message)
         def frame(value):
             with self.lock:
@@ -114,7 +118,7 @@ class MusicRuntime:
 
     def stop(self):
         with self.lock:
-            self.wanted = False;self.frame = None
+            self.wanted = False;self.frame = None;self.started_at=None;self.error=''
             self.spectrum.reset()
             if self.engine is not None:self.engine.stop()
 
