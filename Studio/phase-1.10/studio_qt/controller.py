@@ -19,6 +19,8 @@ class StudioController(QObject):
         self.display_colors = {k:v.color for k,v in self.state.channels.items()}
         self.manual_target = None  # LIVE-only view selection; never persisted as device state.
         self.manual_feedback = ''
+        self.scene_active = False
+        self.scene_status = 'Select a static scene · no connection required'
         self.transition = None
         self.transition_progress = 1.
 
@@ -109,7 +111,16 @@ class StudioController(QObject):
         self.state.toggle_favorite(name); self.changed.emit()
 
     def select_scene(self, name, now=None):
-        if getattr(self.adapter,"live",False):return
+        if getattr(self.adapter,"live",False):
+            handler=getattr(self,'scene_request',None)
+            if handler is not None:handler(name)
+            return
+        from studio_ui.state import SCENES
+        if name not in SCENES or not all(isinstance(color,str) and len(color)==7 and color.startswith('#') and QColor(color).isValid() for color in SCENES[name][:2]):
+            self.scene_status='Scene failed: invalid scene';self.scene_active=False;self.changed.emit();return
+        self.scene_status=''
+        self.state.mode='Manual';self.state.playing=False
+        self.scene_active=True
         self.adapter.apply_scene(name)
         self.state.select_scene(name)
         target = {k:v.color for k,v in self.state.channels.items()}
@@ -135,6 +146,7 @@ class StudioController(QObject):
         self.set_hex(candidate.channels[candidate.selected_channel].color)
 
     def _manual_color(self):
+        self.scene_active=False
         self.transition = None
         self.display_colors = {k:v.color for k,v in self.state.channels.items()}
         self.changed.emit(); self.output_changed.emit()

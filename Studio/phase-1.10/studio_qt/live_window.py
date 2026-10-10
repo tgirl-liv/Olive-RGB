@@ -98,8 +98,9 @@ class LiveStudioWindow(StudioWindow):
         self.master.power.setToolTip('Software power through RGB black, matching the existing application.')
         from .app import ScenePanel
         for panel in self.findChildren(ScenePanel):
-            panel.setEnabled(False);panel.setToolTip('DEMO-only scenes; unavailable in LIVE')
-            panel.status.setText('Unavailable in LIVE · use DEMO for scenes')
+            panel.setEnabled(hasattr(self.c,'scene_request') and not self._closing)
+            panel.setToolTip('Static recall preserves power and brightness; Follow Master controls participation')
+            panel.progress()
         self.pause.setEnabled(False);self.pause.setText('DEMO only')
         self.inspector.tabs.setTabEnabled(1,hasattr(self.inspector,'live_music'))
         self.inspector.tabs.setTabEnabled(2,True)

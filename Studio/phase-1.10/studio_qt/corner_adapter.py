@@ -109,7 +109,30 @@ class CornerLampAdapter(QObject):
     def select_mode(self,mode):
         if mode!='Manual':raise ValueError('Only manual control is supported in LIVE')
         self._model.select_mode(mode)
-    def apply_scene(self,scene):raise ValueError('Scenes are unavailable in LIVE Phase 1.8')
+    def apply_scene(self,scene):
+        from studio_ui.state import SCENES
+        from PySide6.QtGui import QColor
+        if scene not in SCENES:raise ValueError('Unknown scene')
+        colors=SCENES[scene][:2]
+        if len(colors)!=2 or not all(isinstance(c,str) and len(c)==7 and c.startswith('#') and QColor(c).isValid() for c in colors):
+            raise ValueError('Invalid scene colors')
+        if self.closed:raise RuntimeError('Adapter is closed')
+        if getattr(self,'music_active',False) or getattr(self,'screen_active',False):raise ValueError('Stop capture before recalling a scene')
+        feedback=[]
+        for key,color in zip(('Corner','Hue'),colors):
+            if not self.state.channels[key].follow:
+                feedback.append(key+': Follow Master off; unchanged');continue
+            connected=self.connected if key=='Corner' else getattr(self,'hue_connected',False)
+            if key=='Hue' and connected and not self.hue_caps.get('color'):
+                feedback.append('Hue: RGB unsupported; unchanged');continue
+            # Disconnected preferences are staged without I/O. Connected devices
+            # use the same ownership, capability and rate-limited manual route.
+            if connected:self.set_rgb(key,color)
+            else:self._model.set_rgb(key,color)
+            feedback.append(key+(': color applied' if connected else ': saved; disconnected'))
+        self.state.scene=scene
+        return ' · '.join(feedback)
+
     def publish_demo_meters(self,meters):pass
     def close(self):
         if self.closed:return

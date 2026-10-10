@@ -1,5 +1,6 @@
 """Shared read-only output indicator; contains no lighting calculations."""
 from .common import Panel,text
+from PySide6.QtWidgets import QHBoxLayout
 
 def update_light_preview(self,rgb,engine_rgb,status):
     if self.closed:return
@@ -15,10 +16,14 @@ def update_light_preview(self,rgb,engine_rgb,status):
 
 class VirtualLightPreview(Panel):
     update_light_preview=update_light_preview
-    def __init__(self):
-        super().__init__('VIRTUAL LIGHT PREVIEW')
+    def __init__(self,compact=False):
+        super().__init__(None if compact else 'VIRTUAL LIGHT PREVIEW')
         self.closed=False;self._light_snapshot=None;self.virtual_rgb=None
         self.light_indicator=text('');self.light_indicator.setMinimumHeight(80)
         self.light_readout=text('','muted');self.light_readout.setWordWrap(True)
-        self.box.addWidget(self.light_indicator);self.box.addWidget(self.light_readout)
+        if compact:
+            self.box.setContentsMargins(0,0,0,0)
+            self.light_indicator.setFixedSize(48,44);self.light_readout.setFixedHeight(44)
+            row=QHBoxLayout();row.addWidget(self.light_indicator);row.addWidget(self.light_readout,1);self.box.addLayout(row)
+        else:self.box.addWidget(self.light_indicator);self.box.addWidget(self.light_readout)
         self.update_light_preview(None,None,'Start capture; no physical lights required.')

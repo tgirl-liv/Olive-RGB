@@ -21,6 +21,8 @@ class ScreenLiveWindow(MusicLiveWindow):
         self._pending_screen_mode=None;self._pending_music=False;self._last_screen_frame=None
         self._screen_mode=self.preferences['screen']['capture_mode']
         self._mode_error=''
+        self._pending_scene=None
+        self.c.scene_request=self.request_scene
         self.c.mode_request=self.request_mode
         self.setWindowTitle('Olive RGB Studio · LIVE Manual / Music / Movie / Gaming')
         self.mode_badge.setText('LIVE · MUSIC / SCREEN')
@@ -46,9 +48,42 @@ class ScreenLiveWindow(MusicLiveWindow):
         self._saved_monitor=values['monitor'];self.screen_settings_changed();self.refresh_monitors()
         self.c.changed.connect(self.sync_mode_selector);self.live_controls()
 
+    def request_scene(self,name):
+        from studio_ui.state import SCENES
+        from PySide6.QtGui import QColor
+        try:
+            if self._closing:raise RuntimeError('Studio is shutting down')
+            if name not in SCENES:raise ValueError('Unknown scene')
+            colors=SCENES[name][:2]
+            if len(colors)!=2 or not all(isinstance(c,str) and len(c)==7 and c.startswith('#') and QColor(c).isValid() for c in colors):raise ValueError('Invalid scene colors')
+            self.request_mode('Manual')
+            self._pending_scene=name
+            self.c.scene_status='Waiting for capture to stop · '+name
+            self.finish_scene()
+        except Exception as error:
+            self._pending_scene=None;self.c.scene_active=False
+            self.c.scene_status='Scene failed: '+str(error)
+        self.c.changed.emit()
+
+    def finish_scene(self):
+        if self._pending_scene is None or self.runtime.busy or self.screen_runtime.busy:return
+        name=self._pending_scene;self._pending_scene=None
+        try:
+            feedback=self.c.adapter.apply_scene(name)
+            self.c.scene_status=name+' · '+feedback
+            self.c._manual_color()
+            self.c.scene_active=True;self.c.changed.emit()
+        except Exception as error:
+            self.c.scene_active=False;self.c.scene_status='Scene failed: '+str(error)
+            # A device may have accepted its color before another route failed.
+            # Show the actual staged state, never a successful scene highlight.
+            self.c._manual_color()
+
     def request_mode(self,mode,restart=False):
         """GUI-only latest request. Never start a new capture until both drain."""
         if self._closing:return
+        self._pending_scene=None
+        self.c.scene_active=False
         emit('mode.request',music=mode=='Music',screen=mode in ('Screen','Movie','Gaming'),manual=mode=='Manual')
         if mode=='Screen':mode=self._screen_mode
         if mode not in ('Manual','Music','Movie','Gaming'):raise ValueError('Unsupported mode')
@@ -140,6 +175,7 @@ class ScreenLiveWindow(MusicLiveWindow):
                 self.screen_status.setText('Saved monitor unavailable; selected Monitor 1. Select Screen to start.' if missing else 'Ready · whole selected monitor · no connection required')
             else:self.screen_status.setText(error)
         if not r.busy and not self.runtime.busy:
+            self.finish_scene()
             if self._pending_music:
                 self._pending_music=False
                 try:
@@ -211,6 +247,7 @@ class ScreenLiveWindow(MusicLiveWindow):
 
     def closeEvent(self,event):
         if hasattr(self,'screen_runtime'):
+            self._pending_scene=None
             self._pending_screen_mode=None;self._pending_music=False;self.screen_runtime.close()
             if self._cleanup_done and (self.screen_runtime.busy or self.screen_runtime.scanning):event.ignore();return
         super().closeEvent(event)

@@ -18,26 +18,45 @@ from .widgets.inspector import Inspector
 
 class ScenePanel(Panel):
     def __init__(self,c):
-        super().__init__('SCENE LAUNCH PADS');self.c=c;self.columns=0
+        super().__init__('SCENE LAUNCH PADS');self.c=c;self.columns=0;self._visible_cards=None
         self.favorite=button('Favorites',lambda b:c.set('favorites_only',b),True);self.favorite.setIcon(icon('Favorite'));self.header.addWidget(self.favorite)
         self.grid=QGridLayout();self.grid.setSpacing(10);self.box.addLayout(self.grid)
         self.cards=[ScenePad(name,c) for name in SCENES]
-        self.status=text('','muted');self.status.setWordWrap(True);self.box.addWidget(self.status)
+        self.status=text('','muted');self.status.setWordWrap(True)
+        from .widgets.light_preview import VirtualLightPreview
+        self.preview=VirtualLightPreview(compact=True)
+        footer=QHBoxLayout();footer.addWidget(self.status,1);footer.addWidget(self.preview,1);self.box.addLayout(footer)
+        self.status.setFixedHeight(44)
         c.changed.connect(self.refresh);c.output_changed.connect(self.progress);self.refresh()
     def resizeEvent(self,event):super().resizeEvent(event);self.refresh()
     def refresh(self):
         assign(self.favorite,self.c.state.favorites_only)
         columns=4 if self.width()>=650 else 2
-        for card in self.cards:self.grid.removeWidget(card)
         visible=[card for card in self.cards if not self.c.state.favorites_only or card.name in self.c.state.favorites]
-        for card in self.cards:card.setVisible(card in visible)
-        for i,card in enumerate(visible):self.grid.addWidget(card,i//columns,i%columns)
+        if columns!=self.columns or visible!=self._visible_cards:
+            for card in self.cards:self.grid.removeWidget(card);card.setVisible(card in visible)
+            for i,card in enumerate(visible):self.grid.addWidget(card,i//columns,i%columns)
+            self._visible_cards=visible
         for col in range(4):self.grid.setColumnStretch(col,1 if col<columns else 0)
         self.columns=columns;self.progress()
     def progress(self):
         c=self.c
         if getattr(c.adapter,'live',False):
-            self.status.setText('Unavailable in LIVE · use DEMO for scenes');return
+            if not hasattr(c,'scene_request'):
+                self.status.setText('Unavailable in LIVE · use the complete Studio window');return
+            self.status.setText(c.scene_status if c.scene_active or c.scene_status.startswith(('Waiting','Scene failed','Select')) else 'Static scene inactive · '+c.scene_status)
+            self.status.setToolTip(self.status.text())
+            rgb=tuple(int(c.state.channels['Corner'].color[i:i+2],16) for i in (1,3,5))
+            output=c.adapter.corner_music_rgb(rgb) if hasattr(c.adapter,'corner_music_rgb') else None
+            self.preview.update_light_preview(output,rgb,'Read-only static output · lights optional')
+            self.preview.light_readout.setToolTip(self.preview.light_readout.text())
+            return
+        channel=c.state.channels['Corner'];rgb=tuple(int(c.display_colors['Corner'][i:i+2],16) for i in (1,3,5))
+        scale=channel.brightness*(c.state.master_brightness if channel.follow else 1.)
+        output=tuple(round(v*scale) for v in rgb) if channel.power and (c.state.master_power or not channel.follow) else (0,0,0)
+        self.preview.update_light_preview(output,rgb,'DEMO static output')
+        if c.scene_status.startswith('Scene failed'):
+            self.status.setText(c.scene_status);return
         self.status.setText(f'{c.state.scene} · '+(f'Transition {c.transition_progress:.0%}' if c.transition else f'{c.state.transition_seconds:g}s {c.state.transition_curve.lower()} · mock output'))
 
 

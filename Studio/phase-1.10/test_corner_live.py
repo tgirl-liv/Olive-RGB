@@ -157,9 +157,11 @@ class LiveTests(unittest.TestCase):
     def test_no_automatic_color_on_connection(self):
         a=self.adapter();a.set_rgb('Corner','#00FF00');self.connect(a);QTest.qWait(120)
         self.assertFalse(any(x[0]=='rgb' for x in self.lamps[0].calls))
-    def test_scene_and_music_not_supported(self):
+    def test_scene_stages_offline_without_connecting_music_still_unsupported(self):
         a=self.adapter()
-        with self.assertRaises(ValueError):a.apply_scene('Ocean Breeze')
+        a.apply_scene('Ocean Breeze')
+        self.assertEqual(a.state.channels['Corner'].color,'#2365DD')
+        with self.assertRaises(ValueError):a.apply_scene('missing')
         with self.assertRaises(ValueError):a.select_mode('Music')
         self.assertEqual(self.workers,[])
     def test_gui_remains_responsive_while_connecting_and_closing(self):

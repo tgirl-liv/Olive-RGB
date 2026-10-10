@@ -19,7 +19,7 @@ def default_path():
 
 
 def defaults(mode):
-    result = {'appearance':{'theme':'Studio'},'master': {'power': True, 'brightness': .8},
+    result = {'scenes':{'selected':'MGK After Dark','favorites':['MGK After Dark','Ocean Breeze']},'appearance':{'theme':'Studio'},'master': {'power': True, 'brightness': .8},
             'devices': {key: {'power': True, 'brightness': .8, 'color': color,
                              'follow': key != 'Hue' or mode == 'demo'}
                         for key, color in (('Corner', '#F32E83'), ('Hue', '#7927DB'))},
@@ -38,6 +38,12 @@ def defaults(mode):
 def validate(data, mode):
     """Reject malformed values; fill missing v1 fields for forward additions."""
     def merge(template, supplied, key=''):
+        if key=='scenes':
+            from studio_ui.state import SCENES
+            if not isinstance(supplied,dict) or not isinstance(supplied.get('selected','MGK After Dark'),str) or supplied.get('selected','MGK After Dark') not in SCENES:raise ValueError('Invalid scene selection')
+            favorites=supplied.get('favorites',['MGK After Dark','Ocean Breeze'])
+            if not isinstance(favorites,list) or len(favorites)>len(SCENES) or any(not isinstance(n,str) or n not in SCENES for n in favorites):raise ValueError('Invalid scene favorites')
+            return {'selected':supplied.get('selected','MGK After Dark'),'favorites':list(dict.fromkeys(favorites))}
         if key=='identity':
             from .hue_identity import validate_identity
             return None if supplied is None else validate_identity(supplied)
@@ -137,10 +143,11 @@ def restore(state, values):
     for key, fields in values['devices'].items():
         for name, value in fields.items():setattr(state.channels[key], name, value)
     for name in ('sensitivity', 'smoothing', 'relationship', 'separation'):setattr(state, name, values['music'][name])
+    state.scene=values['scenes']['selected'];state.favorites=set(values['scenes']['favorites'])
     state.mode = 'Manual';state.playing = False
 
 
 def snapshot(state, music, appearance=None):
-    return {'appearance':copy.deepcopy(appearance or {'theme':'Studio'}),'master': {'power': state.master_power, 'brightness': state.master_brightness},
+    return {'scenes':{'selected':state.scene,'favorites':sorted(state.favorites)},'appearance':copy.deepcopy(appearance or {'theme':'Studio'}),'master': {'power': state.master_power, 'brightness': state.master_brightness},
             'devices': {key: {name: getattr(channel, name) for name in ('power', 'brightness', 'color', 'follow')}
                         for key, channel in state.channels.items()}, 'music': copy.deepcopy(music)}

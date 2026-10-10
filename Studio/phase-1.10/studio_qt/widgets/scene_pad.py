@@ -114,7 +114,7 @@ class ScenePad(QAbstractButton):
         if self.hover:p.fillPath(path,QColor(181,122,255,20))
         if self.isDown():p.fillPath(path,QColor(0,0,0,65))
         p.setClipping(False)
-        active=self.controller.state.scene==self.name
+        active=self.controller.state.scene==self.name and self.controller.state.mode=='Manual' and self.controller.scene_active
         p.setPen(QPen(QColor(PINK if active else '#E2C8FF' if self.hasFocus() else PURPLE if self.hover else '#403653'),2 if active or self.hasFocus() else 1))
         p.setBrush(Qt.BrushStyle.NoBrush);p.drawPath(path)
         if active:
@@ -123,6 +123,6 @@ class ScenePad(QAbstractButton):
         p.drawText(self.label_rect(),Qt.AlignmentFlag.AlignLeft|Qt.AlignmentFlag.AlignVCenter|Qt.TextFlag.TextWordWrap,self.name)
         p.setPen(Qt.PenStyle.NoPen);p.setBrush(QColor(10,10,23,205));p.drawRoundedRect(QRectF(9,9,36,20),5,5)
         font.setPixelSize(11);p.setFont(font);p.setPen(QColor('#eee3ff'))
-        p.drawText(QRectF(9,9,36,20),Qt.AlignmentFlag.AlignCenter,f'{self.controller.state.transition_seconds:g}s')
+        p.drawText(QRectF(9,9,36,20),Qt.AlignmentFlag.AlignCenter,'LIVE' if getattr(self.controller.adapter,'live',False) else f'{self.controller.state.transition_seconds:g}s')
 
     def label_rect(self):return QRectF(12,self.height()-43,self.width()-24,37)
