@@ -31,7 +31,7 @@ def defaults(mode):
     if mode == 'live':result['music'].update(color_source='Preset',custom_theme_id=None,output_brightness=1.,output_saturation=1.)
     if mode == 'live':result['controller']={'family':LOTUS,'identity':identity_for(LOTUS)}
     if mode == 'live':result['hue']={'identity':None,'mode':'color','temperature':300}
-    if mode == 'live':result['screen']={'monitor':1,'intensity':1.,'saturation':1.25}
+    if mode == 'live':result['screen']={'capture_mode':'Movie','monitor':1,'intensity':1.,'saturation':1.25}
     return result
 
 
@@ -52,6 +52,9 @@ def validate(data, mode):
             family=supplied.get('family',LOTUS);identity=identity_for(family)
             if supplied.get('identity',identity)!=identity:raise ValueError('Controller identity does not match the configured family')
             return {'family':family,'identity':identity}
+        if key=='capture_mode':
+            if supplied not in ('Movie','Gaming'):raise ValueError('Invalid screen mode')
+            return supplied
         if key=='monitor':
             if type(supplied) is not int or not 1<=supplied<=128:raise ValueError('Invalid monitor')
             return supplied

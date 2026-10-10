@@ -43,9 +43,10 @@ class MusicLiveWindow(DualLiveWindow):
         self.music_start=button('Start Music',self.start_music)
         self.music_stop=button('Stop Music',self.stop_music)
         self.music_status=text('Audio stopped · default Windows output loopback','muted');self.music_status.setWordWrap(True)
-        row=QHBoxLayout();row.addWidget(self.music_status,1);row.addWidget(self.music_start);row.addWidget(self.music_stop)
+        row=QHBoxLayout();row.addWidget(self.music_status,1)
         self.centralWidget().layout().insertLayout(4,row)
         panel=Panel('LIVE MUSIC')
+        actions=QHBoxLayout();actions.addWidget(self.music_start);actions.addWidget(self.music_stop);panel.box.addLayout(actions)
         note=text('Captures the Windows default output. Change output in Windows; the existing engine follows it. Stop / Esc releases music ownership.','muted');note.setWordWrap(True);panel.box.addWidget(note)
         self.profile=QComboBox();self.profile.addItems(PROFILES);self.profile.setCurrentText('Reactive');panel.box.addWidget(text('Production response profile'));panel.box.addWidget(self.profile)
         self.palette=QComboBox();self.palette.addItems(PALETTES);panel.box.addWidget(text('Production palette (Album artwork fallback)'));panel.box.addWidget(self.palette)
@@ -80,8 +81,7 @@ class MusicLiveWindow(DualLiveWindow):
             check.toggled.connect(lambda enabled,key=key:self.participation(key,enabled));panel.box.addWidget(check);self.participate[key]=check
         note=text('Music owns color only for participating connected devices. Local power/brightness remain effective; Follow Master ON additionally applies Master power/brightness. Opt out to edit manual color.','muted');note.setWordWrap(True);panel.box.addWidget(note)
         self.pages.widget(1).widget().layout().insertWidget(1,panel)
-        self.master.modes['Music'].clicked.connect(self.start_music)
-        self.master.modes['Manual'].clicked.connect(self.stop_music)
+        self.c.mode_request=lambda mode:self.start_music() if mode=='Music' else self.stop_music() if mode=='Manual' else None
         self.stop_shortcut=QShortcut(QKeySequence('Esc'),self);self.stop_shortcut.activated.connect(self.stop_music)
         self.music_timer=QTimer(self);self.music_timer.setInterval(33);self.music_timer.timeout.connect(self.poll_music)
         if preferences_path is not None:
@@ -278,7 +278,7 @@ class MusicLiveWindow(DualLiveWindow):
             else:self.album.update_light_preview(None,None,'Waiting for fresh Music data.' if active else 'Start Music for measured output.')
         self.music_start.setEnabled(not self._closing and not self.runtime.busy)
         self.music_stop.setEnabled(not self._closing and (active or self.runtime.busy))
-        self.master.modes['Music'].setEnabled(not self._closing and not self.runtime.busy)
+        self.master.modes['Music'].setEnabled(not self._closing)
         for widget in (self.profile,self.palette,self.sensitivity,self.smoothing,self.harmony,self.separation,self.output_brightness,self.output_saturation,self.adjustment_reset):widget.setEnabled(not self._closing)
         selected=self.c.state.selected_channel
         if a.owns(selected):

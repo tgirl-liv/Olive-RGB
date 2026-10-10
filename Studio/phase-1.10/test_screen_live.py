@@ -140,7 +140,7 @@ class ScreenWindowTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             path=Path(directory)/'preferences-v1.json';w=self.window(preferences_path=path)
             w.monitor.setCurrentIndex(1);w.screen_intensity.setValue(150);w.screen_saturation.setValue(200);w.save_preferences()
-            values=PreferencesStore(path).load('live')['screen'];self.assertEqual(values,{'monitor':2,'intensity':1.5,'saturation':2.})
+            values=PreferencesStore(path).load('live')['screen'];self.assertEqual(values,{'capture_mode':'Movie','monitor':2,'intensity':1.5,'saturation':2.})
             restored=self.window(preferences_path=path);self.assertEqual(restored.monitor.currentData(),2);self.assertEqual(restored.screen_intensity.value(),150);self.assertFalse(restored.screen_runtime.busy)
     def test_missing_saved_monitor_safe_fallback_and_validation(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -199,7 +199,7 @@ class ScreenWindowTests(unittest.TestCase):
         a.set_follow_master('Corner',False);a.set_brightness('Corner',.25);w.live_controls()
         self.assertEqual(w.screen_preview.virtual_rgb,tuple(round(c*.25) for c in a.screen_rgb))
     def test_screen_navigation_never_starts_capture(self):
-        w=self.window();w.master.modes['Screen'].click()
+        w=self.window();w.c.navigate('Screen')
         self.assertEqual(w.c.state.page,'Screen');self.assertFalse(w.screen_runtime.busy)
     def test_actual_selector_manual_music_screen_manual_releases_ownership(self):
         from PySide6.QtCore import Qt
@@ -211,14 +211,15 @@ class ScreenWindowTests(unittest.TestCase):
         QTest.mouseClick(w.master.modes['Music'],Qt.MouseButton.LeftButton)
         self.wait(lambda:a.last_frame is not None);self.assertTrue(a.owns('Corner'))
         QTest.mouseClick(w.master.modes['Screen'],Qt.MouseButton.LeftButton)
-        self.assertEqual(w.c.state.page,'Screen');self.assertEqual(w.c.state.mode,'Screen')
-        self.assertFalse(a.music_active);self.assertFalse(a.screen_active);self.assertFalse(a.owns('Corner'))
-        self.assertIsNone(w.screen_runtime.thread);self.assertIsNone(w._pending_screen_mode)
+        self.assertEqual(w.c.state.page,'Screen');self.assertEqual(w.c.state.mode,'Movie')
+        self.assertFalse(a.music_active)
+        self.wait(lambda:a.screen_active and w.screen_preview.virtual_rgb is not None)
+        self.assertTrue(a.owns('Corner'));self.assertIsNone(w._pending_screen_mode)
         self.assertTrue(w.movie_start.isVisible());self.assertTrue(w.gaming_start.isVisible())
         self.assertTrue(w.master.modes['Screen'].isChecked())
         self.assertFalse(w.master.modes['Music'].isChecked());self.assertFalse(w.master.modes['Manual'].isChecked())
         self.wait(lambda:not w.runtime.busy);w.c.changed.emit();w.live_controls()
-        self.assertEqual(w.c.state.mode,'Screen');self.assertTrue(w.master.modes['Screen'].isChecked())
+        self.assertEqual(w.c.state.mode,'Movie');self.assertTrue(w.master.modes['Screen'].isChecked())
         # The bus is on the Studio page. Returning there must preserve selection.
         w.nav['Studio'].click();self.assertTrue(w.master.modes['Screen'].isChecked())
         QTest.mouseClick(w.master.modes['Manual'],Qt.MouseButton.LeftButton)
@@ -241,31 +242,94 @@ class ScreenWindowTests(unittest.TestCase):
         self.wait(lambda:not w.screen_runtime.busy);self.assertTrue(w.master.modes['Manual'].isChecked())
         self.assertFalse(w.master.modes['Screen'].isChecked());self.assertFalse(w.c.adapter.screen_active)
 
-    def test_idle_screen_selector_does_not_start_capture_or_connections(self):
-        from PySide6.QtCore import Qt
-        w=self.window();QTest.mouseClick(w.master.modes['Screen'],Qt.MouseButton.LeftButton)
-        self.assertEqual(w.c.state.mode,'Screen');self.assertEqual(w.c.state.page,'Screen')
-        self.assertIsNone(w.screen_runtime.thread);self.assertFalse(w.runtime.busy)
-        self.assertFalse(self.f.f.corner.workers);self.assertIsNone(w.c.adapter.hue.thread)
-        w.c.changed.emit();self.assertTrue(w.master.modes['Screen'].isChecked())
-
-    def test_screen_selector_cancels_queued_capture_request(self):
-        from PySide6.QtCore import Qt
-        w=self.window();w.start_screen('Movie')
-        self.assertEqual(w._pending_screen_mode,'Movie')
-        QTest.mouseClick(w.master.modes['Screen'],Qt.MouseButton.LeftButton)
-        w.poll_screen();self.assertIsNone(w._pending_screen_mode)
-        self.assertIsNone(w.screen_runtime.thread);self.assertEqual(w.c.state.mode,'Screen')
+    def test_screen_selector_starts_saved_capture_without_connections(self):
+        w=self.window();w.master.modes['Screen'].click()
+        self.wait(lambda:w.screen_preview.virtual_rgb is not None)
+        self.assertEqual(w.c.state.mode,'Movie');self.assertEqual(w.c.state.page,'Screen')
+        self.assertFalse(w.runtime.busy);self.assertFalse(self.f.f.corner.workers)
+        self.assertIsNone(w.c.adapter.hue.thread)
+        thread=w.screen_runtime.thread
+        for _ in range(5):w.c.set('mode','Screen');w.poll_screen()
+        self.assertIs(w.screen_runtime.thread,thread)
         self.assertTrue(w.master.modes['Screen'].isChecked())
 
-    def test_late_music_error_keeps_idle_screen_selected_and_visible(self):
-        from PySide6.QtCore import Qt
-        w=self.window();QTest.mouseClick(w.master.modes['Screen'],Qt.MouseButton.LeftButton)
+    def test_latest_request_wins_and_manual_cancels_queued_capture(self):
+        w=self.window();w.start_screen('Movie');w.c.set('mode','Music');w.c.set('mode','Screen')
+        self.assertEqual(w._pending_screen_mode,'Movie');self.assertFalse(w._pending_music)
+        w.c.set('mode','Manual');w.poll_screen()
+        self.assertIsNone(w._pending_screen_mode);self.wait(lambda:not w.screen_runtime.busy)
+        self.assertFalse(w.screen_runtime.wanted)
+        self.assertEqual(w.c.state.mode,'Manual');self.assertTrue(w.master.modes['Manual'].isChecked())
+
+    def test_stopped_music_error_does_not_cancel_screen_activation(self):
+        w=self.window();w.master.modes['Screen'].click()
         w.runtime.error='Audio error: late stopped capture failure';w.poll_music()
-        self.assertEqual(w.c.state.mode,'Screen');self.assertTrue(w.master.modes['Screen'].isChecked())
-        self.assertEqual(w.c.state.page,'Screen');self.assertTrue(w.movie_start.isVisible())
-        self.assertIn('late stopped capture failure',w.music_status.text())
-        self.assertIsNone(w.screen_runtime.thread);self.assertFalse(w.c.adapter.music_active)
+        self.wait(lambda:w.screen_preview.virtual_rgb is not None)
+        self.assertEqual(w.c.state.mode,'Movie');self.assertTrue(w.master.modes['Screen'].isChecked())
+        self.assertFalse(w.c.adapter.music_active)
+
+    def test_music_reselection_is_idempotent_and_manual_stops_capture(self):
+        w=self.window();w.master.modes['Music'].click()
+        self.wait(lambda:w.c.adapter.last_frame is not None)
+        thread=w.runtime.thread;count=len(self.f.engines)
+        for _ in range(5):w.master.modes['Music'].click();w.poll_screen()
+        self.assertIs(w.runtime.thread,thread);self.assertEqual(len(self.f.engines),count)
+        self.assertTrue(w.master.modes['Music'].isChecked())
+        w.master.modes['Manual'].click();self.wait(lambda:not w.runtime.busy)
+        self.assertFalse(w.c.adapter.music_active);self.assertTrue(w.master.modes['Manual'].isChecked())
+        self.assertFalse(self.f.f.corner.workers)
+
+    def test_music_activation_failure_restores_safe_selector(self):
+        def fail(*args):raise OSError('audio unavailable')
+        w=self.window();w.runtime.factory=fail;w.master.modes['Music'].click()
+        self.wait(lambda:'audio unavailable' in w.music_status.text())
+        self.assertEqual(w.c.state.mode,'Manual');self.assertTrue(w.master.modes['Manual'].isChecked())
+        self.assertFalse(w.c.adapter.music_active);self.assertFalse(w.c.adapter.screen_active)
+
+    def test_screen_activation_failure_restores_safe_selector(self):
+        def fail(*args):raise OSError('screen denied')
+        w=self.window(screen_factory=fail);w.master.modes['Screen'].click()
+        self.wait(lambda:'screen denied' in w.screen_status.text())
+        self.assertEqual(w.c.state.mode,'Manual');self.assertTrue(w.master.modes['Manual'].isChecked())
+        self.assertFalse(w.master.modes['Screen'].isChecked());self.assertFalse(self.f.f.corner.workers)
+
+    def test_saved_gaming_selection_and_music_settings_activate(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path=Path(directory)/'preferences-v1.json';w=self.window(preferences_path=path)
+            self.start(w,'Gaming');w.stop_screen();w.profile.setCurrentText('MGK')
+            w.sensitivity.setValue(125);w.smoothing.setValue(75);w.save_preferences()
+            restored=self.window(preferences_path=path)
+            self.assertFalse(restored.screen_runtime.busy);restored.master.modes['Screen'].click()
+            self.wait(lambda:restored.screen_preview.virtual_rgb is not None)
+            self.assertEqual(restored.c.state.mode,'Gaming')
+            old=restored.screen_runtime.thread;restored.master.modes['Music'].click()
+            self.wait(lambda:restored.c.adapter.last_frame is not None)
+            self.assertFalse(old.is_alive());self.assertEqual(restored.runtime.engine.profile_name,'MGK')
+            self.assertEqual(restored.runtime.engine.user_sensitivity,1.25)
+            self.assertEqual(restored.runtime.engine.user_smoothing,.75)
+
+    def test_synchronous_activation_failure_and_retry(self):
+        w=self.window()
+        with patch.object(w.runtime,'start',side_effect=RuntimeError('startup refused')):
+            w.c.set('mode','Music');w.poll_screen()
+        self.assertIn('startup refused',w.music_status.text())
+        self.assertEqual(w.c.state.mode,'Manual');self.assertTrue(w.master.modes['Manual'].isChecked())
+        w.c.set('mode','Music');self.wait(lambda:w.c.adapter.last_frame is not None)
+        self.assertTrue(w.c.adapter.music_active)
+
+    def test_no_monitor_failure_and_capture_mode_validation(self):
+        w=self.window();w.monitor.clear();w.screen_runtime.scan_error='Monitor discovery denied'
+        w.c.set('mode','Screen');w.poll_screen()
+        self.assertIn('Monitor discovery denied',w.screen_status.text())
+        self.assertEqual(w.c.state.mode,'Manual');self.assertTrue(w.master.modes['Manual'].isChecked())
+        with self.assertRaises(ValueError):validate({'screen':{'capture_mode':'invalid'}},'live')
+        self.assertEqual(validate({'screen':{}},'live')['screen']['capture_mode'],'Movie')
+
+    def test_music_actions_are_on_music_page_not_main_header(self):
+        w=self.window();page=w.pages.widget(1).widget()
+        self.assertTrue(page.isAncestorOf(w.music_start));self.assertTrue(page.isAncestorOf(w.music_stop))
+        self.assertFalse(w.music_start.isVisible());w.c.navigate('Music')
+        self.assertTrue(w.music_start.isVisible());self.assertTrue(w.music_stop.isVisible())
 
     def test_ledble_screen_uses_existing_selected_worker(self):
         from studio_qt import corner_worker

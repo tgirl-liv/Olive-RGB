@@ -22,7 +22,11 @@ class StudioController(QObject):
         self.transition_progress = 1.
 
     def set(self, name, value):
-        if getattr(self.adapter,"live",False) and name=="mode" and value!="Manual":return
+        if getattr(self.adapter,"live",False) and name=="mode":
+            handler=getattr(self,"mode_request",None)
+            if handler is not None:
+                handler(value);return
+            if value!="Manual":return
         if name in ('master_power','master_brightness'):
             self.adapter.set_master(value if name=='master_power' else self.state.master_power,
                                     value if name=='master_brightness' else self.state.master_brightness)
