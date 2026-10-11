@@ -81,6 +81,10 @@ class StudioController(QObject):
         return colorsys.rgb_to_hsv(*(int(color[i:i+2],16)/255 for i in (1,3,5)))
 
     def apply_manual(self, field, value):
+        cancel=getattr(self,'scene_cancel',None)
+        if cancel is not None:
+            cancel();self.scene_active=False
+            self.scene_status='Static scene inactive · manual edit'
         reasons=[]
         for key in self.target_devices():
             reason=self.target_reason(key,field)
