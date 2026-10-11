@@ -111,12 +111,30 @@ class LiveTests(unittest.TestCase):
         self.assertFalse(a.connected);self.assertIn('does not match',a.message)
     def test_rapid_colors_coalesce_latest_and_limit_rate(self):
         self.settings['write_delay']=.15;a=self.adapter();self.connect(a)
-        a.set_master(True,1);a.set_brightness('Corner',1)
-        for color in ['#FF0000','#00FF00','#0000FF']*80:a.set_rgb('Corner',color)
-        self.wait(lambda:any(x[0]=='rgb' and x[2]==(0,0,255) for x in self.lamps[0].calls))
-        a.set_rgb('Corner','#FF0000');self.wait(lambda:any(x[0]=='rgb' and x[2]==(255,0,0) for x in self.lamps[0].calls))
-        writes=[x for x in self.lamps[0].calls if x[0]=='rgb'];self.assertLess(len(writes),6)
-        self.assertTrue(all(b[1]-a[1]>=.245 for a,b in zip(writes,writes[1:])))
+        worker=self.workers[0];admissions=[];submit=worker._submit
+        def record(coroutine):
+            if coroutine.cr_code.co_name=='guarded_write':
+                admissions.append((worker.last_send_time,worker.last_rgb))
+            return submit(coroutine)
+        def writes():return [x for x in self.lamps[0].calls if x[0]=='rgb']
+        with patch.object(worker,'_submit',record):
+            a.set_master(True,1);a.set_brightness('Corner',1)
+            for color in ['#FF0000','#00FF00','#0000FF']*80:a.set_rgb('Corner',color)
+            self.wait(lambda:bool(writes()) and writes()[-1][2]==(0,0,255))
+            blue_count=len(writes())
+            a.set_rgb('Corner','#FF0000')
+            self.wait(lambda:len(writes())>blue_count and writes()[-1][2]==(255,0,0))
+            # Observe completed delivery, not an old matching color in the burst.
+            self.wait(lambda:self.lamps[0].active==0 and a.session.pending is None)
+        delivered=writes();self.assertLess(len(delivered),6)
+        self.assertEqual(delivered[-1][2],(255,0,0))
+        self.assertEqual([rgb for _,rgb in admissions],[x[2] for x in delivered])
+        gaps=[b[0]-a[0] for a,b in zip(admissions,admissions[1:])]
+        # BluetoothWorker gates admission, before asynchronous GATT execution.
+        # Coroutine scheduling can compress observed entry gaps without violating
+        # that gate. Test the actual limiter timestamp, with no 5 ms tolerance.
+        self.assertTrue(all(gap>=corner_worker.LIGHT_UPDATE_INTERVAL for gap in gaps),
+                        f'Admission gaps: {gaps}; write-entry gaps: '+str([b[1]-a[1] for a,b in zip(delivered,delivered[1:])]))
         self.assertEqual(self.lamps[0].max_active,1)
     def test_brightness_and_follow_master(self):
         a=self.adapter();self.connect(a);a.set_rgb('Corner','#FF0000');a.set_brightness('Corner',.5);a.set_master(True,.5)
@@ -221,5 +239,53 @@ class LiveTests(unittest.TestCase):
     def test_close_before_connect_finishes_without_worker(self):
         w=LiveStudioWindow(worker_factory=self.factory);self.windows.append(w);self.adapters.append(w.c.adapter);w.show();w.close()
         self.wait(lambda:w._cleanup_done);self.assertEqual(self.workers,[])
+
+
+
+class WorkerRateLimitTests(unittest.IsolatedAsyncioTestCase):
+    """Virtual-clock checks of the unchanged worker; no thread or hardware."""
+    def worker(self,clock):
+        worker=corner_worker.BluetoothWorker.__new__(corner_worker.BluetoothWorker)
+        worker.connected=True;worker.last_rgb=None;worker.last_send_time=0
+        worker.rgb_lock=asyncio.Lock();worker.log_callback=self.fail
+        self.admissions=[];self.pending=[];self.entries=[]
+        async def write(*rgb):self.entries.append((clock[0],rgb))
+        worker.lamp=SimpleNamespace(set_rgb=write)
+        def submit(coroutine):
+            self.admissions.append((worker.last_send_time,worker.last_rgb));self.pending.append(coroutine)
+        worker._submit=submit
+        self.addCleanup(lambda:[coroutine.close() for coroutine in self.pending])
+        return worker
+
+    async def test_exact_250ms_boundary_and_rejected_requests_keep_timestamp(self):
+        clock=[100.];worker=self.worker(clock)
+        with patch.object(corner_worker,'time',SimpleNamespace(monotonic=lambda:clock[0])):
+            worker.set_rgb(255,0,0)
+            clock[0]=100.249;worker.set_rgb(0,255,0)
+            self.assertEqual(worker.last_rgb,(255,0,0));self.assertEqual(worker.last_send_time,100.)
+            self.assertEqual(len(self.admissions),1)
+            clock[0]=100.25;worker.set_rgb(0,0,255)
+        self.assertEqual(self.admissions,[(100.,(255,0,0)),(100.25,(0,0,255))])
+
+    async def test_delayed_execution_does_not_change_admission_rate_contract(self):
+        clock=[100.];worker=self.worker(clock)
+        with patch.object(corner_worker,'time',SimpleNamespace(monotonic=lambda:clock[0])):
+            worker.set_rgb(255,0,0)
+            # Explicitly defer the first accepted coroutine; no real sleeps.
+            clock[0]=100.125;await self.pending.pop(0)
+            clock[0]=100.25;worker.set_rgb(0,0,255);await self.pending.pop(0)
+        self.assertEqual(self.admissions,[(100.,(255,0,0)),(100.25,(0,0,255))])
+        self.assertEqual(self.entries,[(100.125,(255,0,0)),(100.25,(0,0,255))])
+        self.assertEqual(self.admissions[1][0]-self.admissions[0][0],.25)
+        self.assertEqual(self.entries[1][0]-self.entries[0][0],.125)
+
+    async def test_small_delta_refresh_keeps_existing_threshold_and_interval(self):
+        clock=[100.];worker=self.worker(clock)
+        with patch.object(corner_worker,'time',SimpleNamespace(monotonic=lambda:clock[0])):
+            worker.set_rgb(10,20,30)
+            clock[0]=100.25;worker.set_rgb(11,21,31)
+            self.assertEqual(len(self.admissions),1);self.assertEqual(worker.last_send_time,100.)
+            clock[0]=101.5;worker.set_rgb(11,21,31)
+        self.assertEqual(self.admissions,[(100.,(10,20,30)),(101.5,(11,21,31))])
 
 if __name__=='__main__':unittest.main()

@@ -5,6 +5,7 @@ import time
 import unittest
 from unittest.mock import patch
 from PySide6.QtCore import QThread
+from PySide6.QtGui import QImage
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication
 from music_coordination import MusicFrame
@@ -91,16 +92,45 @@ class ReactorTests(unittest.TestCase):
         demo=self.widget;live=AudioReactor();live.resize(demo.size());live.enable_live()
         try:
             levels=[.5]*72;peaks=[.6]*72;meters=[.2,.3,.1,.4]
-            demo.levels=levels[:];live.levels=levels[:];demo.peaks=peaks[:];live.peaks=peaks[:]
-            demo.meter_values=meters[:];live.meter_values=meters[:]
-            demo_image=demo.grab().toImage();live_image=live.grab().toImage()
-            # LIVE reserves vertical space for its floating curve, so the
-            # spectrum bars are deliberately shorter than in DEMO. The
-            # shared painter must still produce identical bottom meters.
-            self.assertEqual(demo_image.copy(0,206,720,34),live_image.copy(0,206,720,34))
-            self.assertNotEqual(demo_image.copy(0,150,720,45),live_image.copy(0,150,720,45))
-            self.assertNotEqual(demo_image.copy(0,40,720,80),live_image.copy(0,40,720,80))
-            self.assertEqual(len(live.gradients),72)
+            for widget in (demo,live):widget.meter_values=meters[:]
+            width,height=demo.width(),demo.height();bottom=height-42
+            extents={demo:bottom-20,live:(bottom-20)*.70}
+            tops={widget:bottom-.5*extent for widget,extent in extents.items()}
+            # Render into explicitly scaled images: grab() uses the screen DPR,
+            # while QImage.copy() takes physical pixels, not logical coordinates.
+            for scale in (1.,1.25,2.):
+                with self.subTest(device_pixel_ratio=scale):
+                    def render(widget):
+                        image=QImage(round(width*scale),round(height*scale),QImage.Format.Format_ARGB32_Premultiplied)
+                        image.setDevicePixelRatio(scale);image.fill(0);widget.render(image)
+                        return image
+                    def region(image,y,h):
+                        start=round(y*scale);end=round((y+h)*scale)
+                        return image.copy(0,start,image.width(),end-start)
+                    for widget in (demo,live):widget.levels=levels[:];widget.peaks=peaks[:]
+                    demo_image,live_image=render(demo),render(live)
+                    # Identical inputs must draw identical meters and identical
+                    # gradient pixels where both bars occupy the same area.
+                    self.assertEqual(region(demo_image,height-34,34),region(live_image,height-34,34))
+                    self.assertEqual(region(demo_image,bottom-48,30),region(live_image,bottom-48,30))
+                    # Compare the actual top difference, not the shared lower fill.
+                    self.assertNotEqual(region(demo_image,tops[demo]-4,tops[live]-tops[demo]+8),
+                                        region(live_image,tops[demo]-4,tops[live]-tops[demo]+8))
+                    for widget in (demo,live):widget.levels=[0.]*72;widget.peaks=[0.]*72
+                    empty={widget:render(widget) for widget in (demo,live)}
+                    x=round(12*scale);y=round((tops[demo]+tops[live])/2*scale)
+                    self.assertNotEqual(demo_image.pixel(x,y),empty[demo].pixel(x,y),'DEMO bar must reach the taller extent')
+                    self.assertEqual(live_image.pixel(x,y),empty[live].pixel(x,y),'LIVE must reserve space above its shorter bars')
+                    # With bars/peaks absent, this compares only the intentional
+                    # independently positioned LIVE curve versus DEMO's wave.
+                    self.assertNotEqual(region(empty[demo],40,70),region(empty[live],40,70))
+                    for widget,extent in extents.items():
+                        widget.peaks=peaks[:];peak_image=render(widget)
+                        peak_y=bottom-.6*extent-4
+                        self.assertNotEqual(region(peak_image,math.floor(peak_y)-2,5),
+                                            region(empty[widget],math.floor(peak_y)-2,5),
+                                            'Peak markers must appear at the mode-specific bar extent')
+                        self.assertEqual(len(widget.gradients),72)
         finally:live.reset_live();live.close();live.deleteLater()
 
     def test_demo_generation_is_unchanged(self):
