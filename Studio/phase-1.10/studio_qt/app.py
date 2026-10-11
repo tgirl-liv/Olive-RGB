@@ -63,15 +63,16 @@ class ScenePanel(Panel):
                 self.status.setText('Unavailable in LIVE · use the complete Studio window');return
             self.status.setText(c.scene_status if c.scene_active or c.scene_status.startswith(('Waiting','Scene failed','Select')) else 'Static scene inactive · '+c.scene_status)
             self.status.setToolTip(self.status.text())
-            rgb=tuple(int(c.state.channels['Corner'].color[i:i+2],16) for i in (1,3,5))
+            color=c.display_colors['Corner'] if c.scene_active else c.state.channels['Corner'].color
+            rgb=tuple(int(color[i:i+2],16) for i in (1,3,5))
             output=c.adapter.corner_music_rgb(rgb) if hasattr(c.adapter,'corner_music_rgb') else None
-            self.preview.update_light_preview(output,rgb,'Read-only static output · lights optional')
+            self.preview.update_light_preview(output,rgb,'Intended scene output · hardware unverified')
             self.preview.light_readout.setToolTip(self.preview.light_readout.text())
             return
         channel=c.state.channels['Corner'];rgb=tuple(int(c.display_colors['Corner'][i:i+2],16) for i in (1,3,5))
         scale=channel.brightness*(c.state.master_brightness if channel.follow else 1.)
         output=tuple(round(v*scale) for v in rgb) if channel.power and (c.state.master_power or not channel.follow) else (0,0,0)
-        self.preview.update_light_preview(output,rgb,'DEMO static output')
+        self.preview.update_light_preview(output,rgb,'DEMO intended scene output')
         if c.scene_status.startswith('Scene failed'):
             self.status.setText(c.scene_status);return
         self.status.setText(f'{c.state.scene} · '+(f'Transition {c.transition_progress:.0%}' if c.transition else f'{c.state.transition_seconds:g}s {c.state.transition_curve.lower()} · mock output'))

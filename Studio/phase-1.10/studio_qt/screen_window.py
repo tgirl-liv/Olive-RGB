@@ -25,6 +25,8 @@ class ScreenLiveWindow(MusicLiveWindow):
         self._pending_scene=None
         self._scene_fade=None
         self._scene_feedback=''
+        self._scene_routes=set()
+        self._scene_source={}
         self.scene_timer=QTimer(self);self.scene_timer.setInterval(100)
         self.scene_timer.timeout.connect(self.step_scene)
         self.c.scene_request=self.request_scene
@@ -70,7 +72,9 @@ class ScreenLiveWindow(MusicLiveWindow):
                 raise ValueError('Invalid scene colors')
             # Cancelling keeps the most recently commanded colors as the next
             # starting point. Capture ownership must drain before any scene I/O.
+            source=dict(self.c.display_colors) if self._scene_fade is not None else {key:channel.color for key,channel in self.c.state.channels.items()}
             self.request_mode('Manual')
+            self._scene_source=source
             self._pending_scene=name
             self.c.scene_status='Waiting for capture to stop · '+name
             self.finish_scene()
@@ -84,9 +88,9 @@ class ScreenLiveWindow(MusicLiveWindow):
         if self._pending_scene is None or self.runtime.busy or self.screen_runtime.busy:return
         name=self._pending_scene;self._pending_scene=None
         try:
-            # Only connected, participating, RGB-capable devices animate.
-            # Disconnected devices stage final preferences without any I/O.
-            source={key:self.c.state.channels[key].color for key in ('Corner','Hue')}
+            # Preview all participating, supported intended output, including
+            # disconnected devices. Only the adapter-approved routes perform I/O.
+            source=self._scene_source
             feedback,targets=self.c.adapter.stage_scene_transition(name)
             self._scene_feedback=feedback
             duration=self.c.state.transition_seconds if self.c.state.motion else 0.
@@ -94,10 +98,15 @@ class ScreenLiveWindow(MusicLiveWindow):
             self.c.scene_active=True
             self.c.transition_progress=0.
             self.c.scene_status=name+' · '+feedback
+            self._scene_routes=set(targets)
+            preview_targets={key:self.c.state.channels[key].color for key in ('Corner','Hue')
+                             if self.c.state.channels[key].follow and key not in targets
+                             and not (key=='Hue' and self.c.adapter.hue_connected and not self.c.adapter.hue_caps.get('color'))}
+            preview_targets.update(targets)
             self.c.display_colors={key:channel.color for key,channel in self.c.state.channels.items()}
-            if targets:
+            if preview_targets:
                 self._scene_fade=SceneTransition(
-                    {key:source[key] for key in targets},targets,duration,curve)
+                    {key:source[key] for key in preview_targets},preview_targets,duration,curve)
                 self.step_scene()
                 if self._scene_fade is not None:self.scene_timer.start()
             else:self.c.transition_progress=1.
@@ -113,13 +122,14 @@ class ScreenLiveWindow(MusicLiveWindow):
         if fade is None or self._closing:return
         try:
             colors,progress=fade.sample()
+            self.c.display_colors={key:channel.color for key,channel in self.c.state.channels.items()}
             for key,color in colors.items():
                 # Follow Master can be disabled while a fade is in progress.
                 if not self.c.state.channels[key].follow:continue
                 # Do not bypass normal rate-limited manual transport routes.
-                if self.c.state.channels[key].color.upper()!=color:
+                if key in self._scene_routes and self.c.state.channels[key].color.upper()!=color:
                     self.c.adapter.set_rgb(key,color)
-            self.c.display_colors={key:channel.color for key,channel in self.c.state.channels.items()}
+                self.c.display_colors[key]=color
             self.c.transition_progress=progress
             self.c.scene_status=self.c.state.scene+' · '+self._scene_feedback+' · Transition '+f'{progress:.0%}'
             if progress>=1:

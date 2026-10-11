@@ -1,7 +1,7 @@
 """Mouse-driven static scenes; capture and devices are simulated, never hardware."""
 import tempfile
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import patch,call
 from PySide6.QtCore import Qt,QPoint
 from PySide6.QtTest import QTest
 from studio_ui.state import SCENES
@@ -149,12 +149,13 @@ class SceneTests(unittest.TestCase):
         self.assertFalse(w.c.scene_active)
         self.wait(lambda:w.c.adapter.music_active)
 
-    def test_disconnected_and_opted_out_routes_do_not_fade(self):
+    def test_disconnected_preview_fades_without_device_io_or_opted_out_changes(self):
         w=self.window();w.c.set_transition(2.,'Smooth')
         w.c.state.channels['Hue'].follow=False
         previous=w.c.state.channels['Hue'].color
         w.c.select_scene('Neon Party')
-        self.assertIsNone(w._scene_fade)
+        self.assertIsNotNone(w._scene_fade)
+        self.assertEqual(w._scene_routes,set())
         self.assertEqual(w.c.state.channels['Corner'].color,'#EF27DA')
         self.assertEqual(w.c.state.channels['Hue'].color,previous)
 
@@ -184,6 +185,91 @@ class SceneTests(unittest.TestCase):
                 validate({'scenes':{'transition_seconds':6}},'live')
             with self.assertRaises(ValueError):
                 validate({'scenes':{'transition_curve':'Blink'}},'live')
+
+
+    def test_disconnected_live_preview_uses_engine_samples_and_scaled_output(self):
+        from types import SimpleNamespace
+        from studio_qt import scene_transitions
+        from studio_qt.widgets.scene_pad import artwork
+        w=self.window();a=w.c.adapter
+        a.state.channels['Corner'].brightness=.4;a.state.master_brightness=.5
+        for curve in ('Linear','Smooth'):
+            with self.subTest(curve=curve):
+                clock=[100.]
+                a.state.channels['Corner'].color='#000000';w.c.display_colors['Corner']='#000000'
+                w.c.set_transition(3,curve)
+                thumbnail=artwork('Sunset Chill').copy()
+                with patch.object(scene_transitions,'time',SimpleNamespace(monotonic=lambda:clock[0])), patch.object(a,'set_rgb',wraps=a.set_rgb) as route:
+                    self.click_scene(w,'Sunset Chill');w.scene_timer.stop()
+                    fade=w._scene_fade
+                    self.assertEqual(w.scenes.preview.virtual_rgb,(0,0,0))
+                    for elapsed in (.75,1.5,3):
+                        clock[0]=100+elapsed;expected,progress=fade.sample()
+                        w.step_scene()
+                        self.assertEqual(w.c.display_colors['Corner'],expected['Corner'])
+                        rgb=tuple(int(expected['Corner'][i:i+2],16) for i in (1,3,5))
+                        self.assertEqual(w.scenes.preview.virtual_rgb,a.corner_music_rgb(rgb))
+                        self.assertEqual(w.c.transition_progress,progress)
+                    self.assertIsNone(w._scene_fade);self.assertFalse(w.scene_timer.isActive())
+                    route.assert_not_called()
+                self.assertEqual(thumbnail,artwork('Sunset Chill'))
+        self.assertFalse(self.f.f.corner.workers);self.assertFalse(a.hue.wanted)
+        self.assertIn('hardware unverified',w.scenes.preview.light_readout.text())
+
+    def test_preview_interrupt_rapid_mouse_recalls_start_from_displayed_color(self):
+        from types import SimpleNamespace
+        from studio_qt import scene_transitions
+        w=self.window();clock=[100.];w.c.set_transition(3,'Smooth')
+        with patch.object(scene_transitions,'time',SimpleNamespace(monotonic=lambda:clock[0])):
+            self.click_scene(w,'Sunset Chill');w.scene_timer.stop()
+            clock[0]=101;w.step_scene();middle=dict(w.c.display_colors)
+            for name in ('Ocean Breeze','Neon Party','Cyber Night'):
+                self.click_scene(w,name);w.scene_timer.stop()
+                self.assertEqual(w.c.display_colors,middle)
+                self.assertEqual(w._scene_fade.source['Corner'],tuple(int(middle['Corner'][i:i+2],16) for i in (1,3,5)))
+            clock[0]=104;w.step_scene()
+            final=w.scenes.preview.virtual_rgb
+            self.assertEqual(w.c.display_colors['Corner'],SCENES['Cyber Night'][0])
+            self.assertIsNone(w._scene_fade);w.step_scene()
+            self.assertEqual(w.scenes.preview.virtual_rgb,final)
+
+    def test_connected_preview_samples_keep_existing_manual_routes(self):
+        from types import SimpleNamespace
+        from studio_qt import scene_transitions
+        w=self.window();a=w.c.adapter;self.f.f.corner.connect(a)
+        clock=[100.];w.c.set_transition(3,'Linear')
+        with patch.object(scene_transitions,'time',SimpleNamespace(monotonic=lambda:clock[0])), patch.object(a,'set_rgb',wraps=a.set_rgb) as route:
+            self.click_scene(w,'Ocean Breeze');w.scene_timer.stop();route.reset_mock()
+            clock[0]=101;expected,_=w._scene_fade.sample();w.step_scene()
+            self.assertEqual(route.call_args_list,[call('Corner',expected['Corner'])])
+            rgb=tuple(int(expected['Corner'][i:i+2],16) for i in (1,3,5))
+            self.assertEqual(w.scenes.preview.virtual_rgb,a.corner_music_rgb(rgb))
+            w.step_scene();self.assertEqual(route.call_count,1)  # same sample never adds a write
+
+    def test_close_cancels_preview_timer_and_callbacks(self):
+        w=self.window();w.c.set_transition(3,'Linear');self.click_scene(w,'Ocean Breeze')
+        self.assertTrue(w.scene_timer.isActive());w.close()
+        self.wait(lambda:w._cleanup_done)
+        self.assertFalse(w.scene_timer.isActive());self.assertIsNone(w._scene_fade)
+        previous=w.scenes.preview.virtual_rgb;w.step_scene()
+        self.assertEqual(w.scenes.preview.virtual_rgb,previous)
+
+    def test_demo_mouse_scene_preview_uses_existing_controller_interpolation(self):
+        from studio_qt.app import StudioWindow
+        with tempfile.TemporaryDirectory() as directory:
+            w=StudioWindow(workspace_path=Path(directory)/'workspace.json',preferences_path=Path(directory)/'prefs.json')
+            try:
+                w.show();QTest.qWait(20);w.timer.stop()
+                w.c.state.motion=True;w.c.set_transition(3,'Smooth')
+                pad=w.scenes.cards[0];w.pages.widget(0).ensureWidgetVisible(pad)
+                QTest.mouseClick(pad,Qt.MouseButton.LeftButton);w.timer.stop()
+                start=w.c.transition[0];w.c.advance(start+.75)
+                rgb=tuple(int(w.c.display_colors['Corner'][i:i+2],16) for i in (1,3,5))
+                channel=w.c.state.channels['Corner'];scale=channel.brightness*w.c.state.master_brightness
+                self.assertEqual(w.scenes.preview.virtual_rgb,tuple(round(v*scale) for v in rgb))
+                w.c.advance(start+3);self.assertIsNone(w.c.transition)
+                self.assertEqual(w.c.display_colors['Corner'].upper(),SCENES[pad.name][0])
+            finally:w.close();w.deleteLater()
 
 
 class SceneTransitionMathTests(unittest.TestCase):
