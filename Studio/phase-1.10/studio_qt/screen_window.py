@@ -27,6 +27,7 @@ class ScreenLiveWindow(MusicLiveWindow):
         self.scene_timer=QTimer(self);self.scene_timer.setInterval(100)
         self.scene_timer.timeout.connect(self.step_scene)
         self.c.scene_request=self.request_scene
+        self.c.scene_cancel=self.cancel_scene_transition
         self.c.mode_request=self.request_mode
         self.setWindowTitle('Olive RGB Studio · LIVE Manual / Music / Movie / Gaming')
         self.mode_badge.setText('LIVE · MUSIC / SCREEN')
@@ -111,6 +112,8 @@ class ScreenLiveWindow(MusicLiveWindow):
         try:
             colors,progress=fade.sample()
             for key,color in colors.items():
+                # Follow Master can be disabled while a fade is in progress.
+                if not self.c.state.channels[key].follow:continue
                 # Do not bypass normal rate-limited manual transport routes.
                 if self.c.state.channels[key].color.upper()!=color:
                     self.c.adapter.set_rgb(key,color)
