@@ -1,7 +1,7 @@
 import time
-from PySide6.QtCore import Qt,QTimer,QSize,Slot
+from PySide6.QtCore import Qt,QTimer,QSize,Slot,QSignalBlocker
 from PySide6.QtGui import QKeySequence,QShortcut
-from PySide6.QtWidgets import QApplication,QMainWindow,QWidget,QVBoxLayout,QHBoxLayout,QGridLayout,QSplitter,QStackedWidget,QFrame,QComboBox,QLabel
+from PySide6.QtWidgets import QApplication,QMainWindow,QWidget,QVBoxLayout,QHBoxLayout,QGridLayout,QSplitter,QStackedWidget,QFrame,QComboBox,QLabel,QDoubleSpinBox
 from studio_ui.state import NAVIGATION,SCENES
 from .preferences import PreferencesStore, restore, snapshot, default_path as preferences_path_default
 from .theme import QSS,FRAME_MS
@@ -20,6 +20,12 @@ class ScenePanel(Panel):
     def __init__(self,c):
         super().__init__('SCENE LAUNCH PADS');self.c=c;self.columns=0;self._visible_cards=None
         self.favorite=button('Favorites',lambda b:c.set('favorites_only',b),True);self.favorite.setIcon(icon('Favorite'));self.header.addWidget(self.favorite)
+        if getattr(c.adapter,'live',False):
+            self.duration=QDoubleSpinBox();self.duration.setRange(0,5);self.duration.setSingleStep(.1);self.duration.setDecimals(1);self.duration.setSuffix(' s');self.duration.setAccessibleName('Scene transition duration');self.duration.setToolTip('Scene fade duration · 0 seconds for instant')
+            self.curve=QComboBox();self.curve.addItems(('Smooth','Linear','Instant'));self.curve.setAccessibleName('Scene transition curve')
+            self.header.addWidget(self.duration);self.header.addWidget(self.curve)
+            self.duration.valueChanged.connect(lambda value:c.set_transition(value,self.curve.currentText()))
+            self.curve.currentTextChanged.connect(lambda curve:c.set_transition(self.duration.value(),curve))
         self.grid=QGridLayout();self.grid.setSpacing(10);self.box.addLayout(self.grid)
         self.cards=[ScenePad(name,c) for name in SCENES]
         self.status=text('','muted');self.status.setWordWrap(True)
@@ -31,6 +37,9 @@ class ScenePanel(Panel):
     def resizeEvent(self,event):super().resizeEvent(event);self.refresh()
     def refresh(self):
         assign(self.favorite,self.c.state.favorites_only)
+        if hasattr(self,'duration'):
+            with QSignalBlocker(self.duration):self.duration.setValue(self.c.state.transition_seconds)
+            with QSignalBlocker(self.curve):self.curve.setCurrentText(self.c.state.transition_curve)
         columns=4 if self.width()>=650 else 2
         visible=[card for card in self.cards if not self.c.state.favorites_only or card.name in self.c.state.favorites]
         if columns!=self.columns or visible!=self._visible_cards:
