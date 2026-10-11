@@ -7,6 +7,7 @@ from studio_ui.state import NAVIGATION
 from .music_window import MusicLiveWindow
 from .screen_adapter import ScreenLightingAdapter
 from .screen_runtime import ScreenRuntime
+from .scene_transitions import SceneTransition
 from .widgets.common import Panel,button,text,slider,assign
 from .widgets.light_preview import VirtualLightPreview
 
@@ -22,6 +23,9 @@ class ScreenLiveWindow(MusicLiveWindow):
         self._screen_mode=self.preferences['screen']['capture_mode']
         self._mode_error=''
         self._pending_scene=None
+        self._scene_fade=None
+        self.scene_timer=QTimer(self);self.scene_timer.setInterval(100)
+        self.scene_timer.timeout.connect(self.step_scene)
         self.c.scene_request=self.request_scene
         self.c.mode_request=self.request_mode
         self.setWindowTitle('Olive RGB Studio · LIVE Manual / Music / Movie / Gaming')
@@ -48,6 +52,11 @@ class ScreenLiveWindow(MusicLiveWindow):
         self._saved_monitor=values['monitor'];self.screen_settings_changed();self.refresh_monitors()
         self.c.changed.connect(self.sync_mode_selector);self.live_controls()
 
+    def cancel_scene_transition(self):
+        if self._scene_fade is not None:
+            self.scene_timer.stop()
+            self._scene_fade=None
+
     def request_scene(self,name):
         from studio_ui.state import SCENES
         from PySide6.QtGui import QColor
@@ -55,13 +64,17 @@ class ScreenLiveWindow(MusicLiveWindow):
             if self._closing:raise RuntimeError('Studio is shutting down')
             if name not in SCENES:raise ValueError('Unknown scene')
             colors=SCENES[name][:2]
-            if len(colors)!=2 or not all(isinstance(c,str) and len(c)==7 and c.startswith('#') and QColor(c).isValid() for c in colors):raise ValueError('Invalid scene colors')
+            if len(colors)!=2 or not all(isinstance(c,str) and len(c)==7 and c.startswith('#') and QColor(c).isValid() for c in colors):
+                raise ValueError('Invalid scene colors')
+            # Cancelling keeps the most recently commanded colors as the next
+            # starting point. Capture ownership must drain before any scene I/O.
             self.request_mode('Manual')
             self._pending_scene=name
             self.c.scene_status='Waiting for capture to stop · '+name
             self.finish_scene()
         except Exception as error:
-            self._pending_scene=None;self.c.scene_active=False
+            self._pending_scene=None;self.cancel_scene_transition()
+            self.c.scene_active=False
             self.c.scene_status='Scene failed: '+str(error)
         self.c.changed.emit()
 
@@ -69,20 +82,55 @@ class ScreenLiveWindow(MusicLiveWindow):
         if self._pending_scene is None or self.runtime.busy or self.screen_runtime.busy:return
         name=self._pending_scene;self._pending_scene=None
         try:
-            feedback=self.c.adapter.apply_scene(name)
+            # Only connected, participating, RGB-capable devices animate.
+            # Disconnected devices stage final preferences without any I/O.
+            source={key:self.c.state.channels[key].color for key in ('Corner','Hue')}
+            feedback,targets=self.c.adapter.stage_scene_transition(name)
+            duration=self.c.state.transition_seconds if self.c.state.motion else 0.
+            curve=self.c.state.transition_curve
+            self.c.scene_active=True
+            self.c.transition_progress=0.
             self.c.scene_status=name+' · '+feedback
-            self.c._manual_color()
-            self.c.scene_active=True;self.c.changed.emit()
+            self.c.display_colors={key:channel.color for key,channel in self.c.state.channels.items()}
+            if targets:
+                self._scene_fade=SceneTransition(
+                    {key:source[key] for key in targets},targets,duration,curve)
+                self.step_scene()
+                if self._scene_fade is not None:self.scene_timer.start()
+            else:self.c.transition_progress=1.
+            self.c.changed.emit();self.c.output_changed.emit()
         except Exception as error:
+            self.cancel_scene_transition()
             self.c.scene_active=False;self.c.scene_status='Scene failed: '+str(error)
-            # A device may have accepted its color before another route failed.
-            # Show the actual staged state, never a successful scene highlight.
+            # A device may have accepted earlier colors; do not claim rollback.
+            self.c._manual_color()
+
+    def step_scene(self):
+        fade=self._scene_fade
+        if fade is None or self._closing:return
+        try:
+            colors,progress=fade.sample()
+            for key,color in colors.items():
+                # Do not bypass normal rate-limited manual transport routes.
+                if self.c.state.channels[key].color.upper()!=color:
+                    self.c.adapter.set_rgb(key,color)
+            self.c.display_colors={key:channel.color for key,channel in self.c.state.channels.items()}
+            self.c.transition_progress=progress
+            self.c.scene_status=self.c.state.scene+' · Transition '+f'{progress:.0%}'
+            if progress>=1:
+                self.cancel_scene_transition()
+                self.c.scene_status=self.c.state.scene+' · Transition complete'
+            self.c.output_changed.emit()
+        except Exception as error:
+            self.cancel_scene_transition()
+            self.c.scene_status='Scene failed: '+str(error)
             self.c._manual_color()
 
     def request_mode(self,mode,restart=False):
         """GUI-only latest request. Never start a new capture until both drain."""
         if self._closing:return
         self._pending_scene=None
+        self.cancel_scene_transition()
         self.c.scene_active=False
         emit('mode.request',music=mode=='Music',screen=mode in ('Screen','Movie','Gaming'),manual=mode=='Manual')
         if mode=='Screen':mode=self._screen_mode
@@ -248,6 +296,7 @@ class ScreenLiveWindow(MusicLiveWindow):
     def closeEvent(self,event):
         if hasattr(self,'screen_runtime'):
             self._pending_scene=None
+            self.cancel_scene_transition()
             self._pending_screen_mode=None;self._pending_music=False;self.screen_runtime.close()
             if self._cleanup_done and (self.screen_runtime.busy or self.screen_runtime.scanning):event.ignore();return
         super().closeEvent(event)
