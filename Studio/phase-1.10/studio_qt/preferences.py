@@ -19,7 +19,7 @@ def default_path():
 
 
 def defaults(mode):
-    result = {'scenes':{'selected':'MGK After Dark','favorites':['MGK After Dark','Ocean Breeze']},'appearance':{'theme':'Studio'},'master': {'power': True, 'brightness': .8},
+    result = {'scenes':{'selected':'MGK After Dark','favorites':['MGK After Dark','Ocean Breeze'],'transition_seconds':1.2,'transition_curve':'Smooth'},'appearance':{'theme':'Studio'},'master': {'power': True, 'brightness': .8},
             'devices': {key: {'power': True, 'brightness': .8, 'color': color,
                              'follow': key != 'Hue' or mode == 'demo'}
                         for key, color in (('Corner', '#F32E83'), ('Hue', '#7927DB'))},
@@ -43,7 +43,12 @@ def validate(data, mode):
             if not isinstance(supplied,dict) or not isinstance(supplied.get('selected','MGK After Dark'),str) or supplied.get('selected','MGK After Dark') not in SCENES:raise ValueError('Invalid scene selection')
             favorites=supplied.get('favorites',['MGK After Dark','Ocean Breeze'])
             if not isinstance(favorites,list) or len(favorites)>len(SCENES) or any(not isinstance(n,str) or n not in SCENES for n in favorites):raise ValueError('Invalid scene favorites')
-            return {'selected':supplied.get('selected','MGK After Dark'),'favorites':list(dict.fromkeys(favorites))}
+            seconds=supplied.get('transition_seconds',1.2)
+            curve=supplied.get('transition_curve','Smooth')
+            if type(seconds) not in (int,float) or not math.isfinite(seconds) or not 0<=seconds<=5:raise ValueError('Invalid scene transition duration')
+            if curve not in ('Smooth','Linear','Instant'):raise ValueError('Invalid scene transition curve')
+            return {'selected':supplied.get('selected','MGK After Dark'),'favorites':list(dict.fromkeys(favorites)),
+                    'transition_seconds':float(seconds),'transition_curve':curve}
         if key=='identity':
             from .hue_identity import validate_identity
             return None if supplied is None else validate_identity(supplied)
@@ -144,10 +149,11 @@ def restore(state, values):
         for name, value in fields.items():setattr(state.channels[key], name, value)
     for name in ('sensitivity', 'smoothing', 'relationship', 'separation'):setattr(state, name, values['music'][name])
     state.scene=values['scenes']['selected'];state.favorites=set(values['scenes']['favorites'])
+    state.set_transition(values['scenes']['transition_seconds'],values['scenes']['transition_curve'])
     state.mode = 'Manual';state.playing = False
 
 
 def snapshot(state, music, appearance=None):
-    return {'scenes':{'selected':state.scene,'favorites':sorted(state.favorites)},'appearance':copy.deepcopy(appearance or {'theme':'Studio'}),'master': {'power': state.master_power, 'brightness': state.master_brightness},
+    return {'scenes':{'selected':state.scene,'favorites':sorted(state.favorites),'transition_seconds':state.transition_seconds,'transition_curve':state.transition_curve},'appearance':copy.deepcopy(appearance or {'theme':'Studio'}),'master': {'power': state.master_power, 'brightness': state.master_brightness},
             'devices': {key: {name: getattr(channel, name) for name in ('power', 'brightness', 'color', 'follow')}
                         for key, channel in state.channels.items()}, 'music': copy.deepcopy(music)}
