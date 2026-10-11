@@ -2,9 +2,9 @@
 import math
 import random
 from functools import lru_cache
-from PySide6.QtCore import Qt, QRectF, QPointF
+from PySide6.QtCore import Qt, QRectF, QPointF, QTimer
 from PySide6.QtGui import QPainter, QPainterPath, QColor, QImage, QLinearGradient, QRadialGradient, QPen, QFont
-from PySide6.QtWidgets import QAbstractButton, QToolButton
+from PySide6.QtWidgets import QAbstractButton, QToolButton, QScrollArea
 from studio_ui.state import SCENES
 from ..theme import TEXT, PINK, PURPLE
 
@@ -89,6 +89,21 @@ class ScenePad(QAbstractButton):
         from .common import assign
         assign(self.favorite,self.name in self.controller.state.favorites)
         self.favorite.setText('');self.update()
+
+    def mouseReleaseEvent(self,event):
+        # Clicking a scene changes the active card and emits a panel refresh.
+        # Qt may subsequently scroll its QScrollArea to the focused button,
+        # even though the mouse click did not request navigation. Preserve
+        # the user's viewport for mouse activation; keyboard focus still uses
+        # Qt's normal ensure-visible behavior.
+        area=self.parentWidget()
+        while area is not None and not isinstance(area,QScrollArea):
+            area=area.parentWidget()
+        bar=area.verticalScrollBar() if area is not None else None
+        position=bar.value() if bar is not None else None
+        super().mouseReleaseEvent(event)
+        if bar is not None and position is not None:
+            QTimer.singleShot(0,lambda b=bar,p=position:b.setValue(p))
 
     def resizeEvent(self,event):self.favorite.move(self.width()-35,7);super().resizeEvent(event)
     def enterEvent(self,event):self.hover=True;self.update();super().enterEvent(event)
