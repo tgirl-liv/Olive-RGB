@@ -23,7 +23,7 @@ from studio_qt.preferences import defaults,validate,PreferencesStore
 class AdjustmentMathTests(unittest.TestCase):
     def test_original_tkinter_math_is_preserved(self):
         def function(path):
-            return next(node for node in ast.parse(path.read_text()).body if isinstance(node,ast.FunctionDef) and node.name=='adjust_music_rgb')
+            return next(node for node in ast.parse(path.read_text(encoding='utf-8')).body if isinstance(node,ast.FunctionDef) and node.name=='adjust_music_rgb')
         source=Path(__file__).parent
         self.assertEqual(ast.dump(function(source/'olive_rgb.py')),ast.dump(function(source/'studio_qt/music_adjustments.py')))
 
