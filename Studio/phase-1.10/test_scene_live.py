@@ -5,6 +5,7 @@ from unittest.mock import patch
 from PySide6.QtCore import Qt,QPoint
 from PySide6.QtTest import QTest
 from studio_ui.state import SCENES
+from studio_qt.scene_transitions import SceneTransition
 from studio_qt.preferences import PreferencesStore,validate
 import test_screen_live as fixtures
 import unittest
@@ -15,7 +16,10 @@ class SceneTests(unittest.TestCase):
     setUp=fixtures.ScreenWindowTests.setUp
     tearDown=fixtures.ScreenWindowTests.tearDown
     wait=fixtures.ScreenWindowTests.wait
-    window=fixtures.ScreenWindowTests.window
+    def window(self,**kwargs):
+        w=fixtures.ScreenWindowTests.window(self,**kwargs)
+        w.c.set_transition(0,'Instant')  # Existing static-recall assertions test the instant option.
+        return w
     # Reuse lifecycle fixtures, not the inherited Screen test cases.
     def click_scene(self,w,name):
         if w.c.state.page!='Studio':w.c.navigate('Studio')
@@ -81,7 +85,7 @@ class SceneTests(unittest.TestCase):
         def partial_failure(name):
             w.c.adapter.set_rgb('Corner','#112233')
             raise RuntimeError('test failure')
-        with patch.object(w.c.adapter,'apply_scene',side_effect=partial_failure):
+        with patch.object(w.c.adapter,'stage_scene_transition',side_effect=partial_failure):
             self.click_scene(w,'Ultraviolet')
         self.assertIn('test failure',w.scenes.status.text());self.assertFalse(w.c.scene_active)
         self.assertEqual(w.c.display_colors['Corner'],'#112233')
@@ -115,3 +119,48 @@ class SceneTests(unittest.TestCase):
             w.request_mode('Music');self.assertIsNone(w._pending_scene)
         self.wait(lambda:w.c.adapter.music_active)
         self.assertFalse(w.c.scene_active)
+
+    def test_smooth_live_transition_interrupt_and_final_color(self):
+        w=self.window();a=w.c.adapter
+        self.f.f.corner.connect(a)
+        a.state.channels['Hue'].follow=False
+        w.c.set_transition(.5,'Linear')
+        self.click_scene(w,'Sunset Chill')
+        self.assertIsNotNone(w._scene_fade)
+        QTest.qWait(240)
+        middle=a.state.channels['Corner'].color
+        self.assertNotEqual(middle,'#FF995D')
+        self.assertNotEqual(middle,'#F32E83')
+        self.click_scene(w,'Ocean Breeze')
+        self.assertEqual(w._scene_fade.source['Corner'],tuple(int(middle[i:i+2],16) for i in (1,3,5)))
+        self.wait(lambda:w._scene_fade is None)
+        self.assertEqual(a.state.channels['Corner'].color,'#2365DD')
+        self.assertTrue(w.c.scene_active)
+
+    def test_live_transition_settings_persist(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path=Path(directory)/'preferences-v1.json'
+            w=self.window(preferences_path=path)
+            w.c.set_transition(2.5,'Linear')
+            w.save_preferences()
+            restored=self.window(preferences_path=path)
+            self.assertEqual(restored.c.state.transition_seconds,2.5)
+            self.assertEqual(restored.c.state.transition_curve,'Linear')
+            with self.assertRaises(ValueError):
+                validate({'scenes':{'transition_seconds':6}},'live')
+            with self.assertRaises(ValueError):
+                validate({'scenes':{'transition_curve':'Blink'}},'live')
+
+
+class SceneTransitionMathTests(unittest.TestCase):
+    def test_linear_midpoint_and_completion(self):
+        t=SceneTransition({'Corner':'#000000'}, {'Corner':'#FFFFFF'},2,'Linear',started=0)
+        self.assertEqual(t.sample(1),({'Corner':'#808080'},.5))
+        self.assertEqual(t.sample(2),({'Corner':'#FFFFFF'},1.))
+
+    def test_instant_and_invalid_inputs(self):
+        t=SceneTransition({'Hue':'#112233'}, {'Hue':'#445566'},2,'Instant',started=0)
+        self.assertEqual(t.sample(0)[0]['Hue'],'#445566')
+        for seconds in (-1,6,float('nan')):
+            with self.assertRaises(ValueError):
+                SceneTransition({'Hue':'#112233'},{'Hue':'#445566'},seconds)
