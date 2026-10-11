@@ -17,8 +17,9 @@ class SceneTests(unittest.TestCase):
     tearDown=fixtures.ScreenWindowTests.tearDown
     wait=fixtures.ScreenWindowTests.wait
     def window(self,**kwargs):
+        instant=kwargs.pop('instant',True)
         w=fixtures.ScreenWindowTests.window(self,**kwargs)
-        w.c.set_transition(0,'Instant')  # Existing static-recall assertions test the instant option.
+        if instant:w.c.set_transition(0,'Instant')  # Static-recall assertions use instant mode.
         return w
     # Reuse lifecycle fixtures, not the inherited Screen test cases.
     def click_scene(self,w,name):
@@ -176,7 +177,7 @@ class SceneTests(unittest.TestCase):
             w=self.window(preferences_path=path)
             w.c.set_transition(2.5,'Linear')
             w.save_preferences()
-            restored=self.window(preferences_path=path)
+            restored=self.window(preferences_path=path,instant=False)
             self.assertEqual(restored.c.state.transition_seconds,2.5)
             self.assertEqual(restored.c.state.transition_curve,'Linear')
             with self.assertRaises(ValueError):
