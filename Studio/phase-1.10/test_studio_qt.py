@@ -1,5 +1,5 @@
 """Hardware-free Qt regression tests. Run separately from the Tk test suite."""
-import sys,time,unittest
+import subprocess,sys,time,unittest
 from PySide6.QtCore import Qt
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication
@@ -15,8 +15,22 @@ class QtStudioTests(unittest.TestCase):
     def tearDown(self):self.w.close();self.w.deleteLater();self.app.processEvents()
     def test_startup_isolation(self):
         self.assertTrue(self.w.timer.isActive())
-        for name in ['tkinter','olive_rgb','hue_driver','music_coordination','bleak','soundcard']:
-            self.assertNotIn(name,sys.modules)
+        # Other unittest modules load production backends during collection.
+        # Test DEMO startup in a fresh interpreter instead of inspecting the
+        # shared sys.modules cache from the entire regression suite.
+        script = """
+import sys
+from PySide6.QtWidgets import QApplication
+from studio_qt.app import StudioWindow
+app = QApplication([])
+window = StudioWindow()
+assert window.timer.isActive()
+for name in ('tkinter','olive_rgb','hue_driver','music_coordination','bleak','soundcard'):
+    assert name not in sys.modules, name
+window.close()
+"""
+        result = subprocess.run([sys.executable,'-c',script],capture_output=True,text=True,timeout=30)
+        self.assertEqual(result.returncode,0,result.stdout+'\\n'+result.stderr)
     def test_navigation(self):
         for i,page in enumerate(NAVIGATION):
             self.w.nav[page].click();self.assertEqual(self.c.state.page,page);self.assertEqual(self.w.pages.currentIndex(),i)
