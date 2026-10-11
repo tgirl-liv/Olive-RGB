@@ -21,7 +21,7 @@ class AppearanceTests(unittest.TestCase):
     def window(self):
         w=StudioWindow(preferences_path=self.path);self.windows.append(w);w.show();return w
     def test_original_theme_constants_preserved(self):
-        tree=ast.parse(Path(__file__).with_name('olive_rgb.py').read_text())
+        tree=ast.parse(Path(__file__).with_name('olive_rgb.py').read_text(encoding='utf-8'))
         n=next(n for n in tree.body if isinstance(n,ast.Assign) and any(isinstance(t,ast.Name) and t.id=='THEMES' for t in n.targets))
         original={ast.literal_eval(k):{kw.arg:ast.literal_eval(kw.value) for kw in v.keywords} for k,v in zip(n.value.keys,n.value.values)}
         self.assertEqual(THEMES,original);self.assertEqual(stylesheet('Studio'),QSS)
