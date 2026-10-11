@@ -24,6 +24,7 @@ class ScreenLiveWindow(MusicLiveWindow):
         self._mode_error=''
         self._pending_scene=None
         self._scene_fade=None
+        self._scene_feedback=''
         self.scene_timer=QTimer(self);self.scene_timer.setInterval(100)
         self.scene_timer.timeout.connect(self.step_scene)
         self.c.scene_request=self.request_scene
@@ -87,6 +88,7 @@ class ScreenLiveWindow(MusicLiveWindow):
             # Disconnected devices stage final preferences without any I/O.
             source={key:self.c.state.channels[key].color for key in ('Corner','Hue')}
             feedback,targets=self.c.adapter.stage_scene_transition(name)
+            self._scene_feedback=feedback
             duration=self.c.state.transition_seconds if self.c.state.motion else 0.
             curve=self.c.state.transition_curve
             self.c.scene_active=True
@@ -119,10 +121,10 @@ class ScreenLiveWindow(MusicLiveWindow):
                     self.c.adapter.set_rgb(key,color)
             self.c.display_colors={key:channel.color for key,channel in self.c.state.channels.items()}
             self.c.transition_progress=progress
-            self.c.scene_status=self.c.state.scene+' · Transition '+f'{progress:.0%}'
+            self.c.scene_status=self.c.state.scene+' · '+self._scene_feedback+' · Transition '+f'{progress:.0%}'
             if progress>=1:
                 self.cancel_scene_transition()
-                self.c.scene_status=self.c.state.scene+' · Transition complete'
+                self.c.scene_status=self.c.state.scene+' · '+self._scene_feedback+' · Transition complete'
             self.c.output_changed.emit()
         except Exception as error:
             self.cancel_scene_transition()
