@@ -43,7 +43,7 @@ class PresetTests(unittest.TestCase):
 
     def test_original_palettes_and_mgk_profile_preserved(self):
         from studio_qt.music_engine import MUSIC_PRESETS,MusicEngine
-        source=ast.parse((Path(__file__).parent/'olive_rgb.py').read_text())
+        source=ast.parse((Path(__file__).parent/'olive_rgb.py').read_text(encoding='utf-8'))
         # Parse dict(...) keyword definitions without importing Tkinter/transport.
         node=next(node.value for node in source.body if isinstance(node,ast.Assign) and any(isinstance(t,ast.Name) and t.id=='MUSIC_PRESETS' for t in node.targets))
         original={ast.literal_eval(name):{kw.arg:ast.literal_eval(kw.value) for kw in colors.keywords} for name,colors in zip(node.keys,node.values)}
