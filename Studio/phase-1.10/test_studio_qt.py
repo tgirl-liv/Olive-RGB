@@ -24,6 +24,8 @@ from PySide6.QtWidgets import QApplication
 from studio_qt.app import StudioWindow
 app = QApplication([])
 window = StudioWindow()
+window.show()
+app.processEvents()
 assert window.timer.isActive()
 for name in ('tkinter','olive_rgb','hue_driver','music_coordination','bleak','soundcard'):
     assert name not in sys.modules, name
