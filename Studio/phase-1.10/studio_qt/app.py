@@ -23,7 +23,15 @@ class ScenePanel(Panel):
         if getattr(c.adapter,'live',False):
             self.duration=QDoubleSpinBox();self.duration.setRange(0,5);self.duration.setSingleStep(.1);self.duration.setDecimals(1);self.duration.setSuffix(' s');self.duration.setAccessibleName('Scene transition duration');self.duration.setToolTip('Scene fade duration · 0 seconds for instant')
             self.curve=QComboBox();self.curve.addItems(('Smooth','Linear','Instant'));self.curve.setAccessibleName('Scene transition curve')
-            self.header.addWidget(self.duration);self.header.addWidget(self.curve)
+            # Keep the scene header usable when the LIVE dashboard is narrow.
+            # A single header row otherwise forces the entire scroll content
+            # wider than the viewport at the supported 800px window size.
+            transition_controls=QHBoxLayout()
+            transition_controls.addWidget(text('Transition','muted'))
+            transition_controls.addWidget(self.duration)
+            transition_controls.addWidget(self.curve)
+            transition_controls.addStretch()
+            self.box.addLayout(transition_controls)
             self.duration.valueChanged.connect(lambda value:c.set_transition(value,self.curve.currentText()))
             self.curve.currentTextChanged.connect(lambda curve:c.set_transition(self.duration.value(),curve))
         self.grid=QGridLayout();self.grid.setSpacing(10);self.box.addLayout(self.grid)
@@ -217,7 +225,7 @@ class StudioWindow(QMainWindow):
         for panel in panels:self.dashboard_layout.removeWidget(panel)
         order=[self.master,self.channel_panel,self.audio_panel,self.scenes] if compact else [self.master,self.audio_panel,self.channel_panel,self.scenes] if music else panels
         for i,panel in enumerate(order):self.dashboard_layout.insertWidget(i,panel)
-        self.dashboard_layout.setSpacing(12 if music else 8)
+        self.dashboard_layout.setSpacing(12 if music else 6 if not compact else 8)
         if not restoring:
             self.workspace.sidebar_collapsed=compact;self.workspace.inspector_collapsed=music or compact
             self.workspace.splitter_sizes=(900,330)
