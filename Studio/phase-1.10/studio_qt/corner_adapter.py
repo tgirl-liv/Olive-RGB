@@ -133,6 +133,37 @@ class CornerLampAdapter(QObject):
         self.state.scene=scene
         return ' · '.join(feedback)
 
+    def stage_scene_transition(self, scene):
+        """Stage disconnected scene preferences; return connected routes for fading.
+
+        Unlike apply_scene, this never queues a destination color before the
+        first transition sample, avoiding a flash of the final color.
+        """
+        from studio_ui.state import SCENES
+        from PySide6.QtGui import QColor
+        if scene not in SCENES:raise ValueError('Unknown scene')
+        colors=SCENES[scene][:2]
+        if len(colors)!=2 or not all(isinstance(c,str) and len(c)==7 and c.startswith('#') and QColor(c).isValid() for c in colors):
+            raise ValueError('Invalid scene colors')
+        if self.closed:raise RuntimeError('Adapter is closed')
+        if getattr(self,'music_active',False) or getattr(self,'screen_active',False):
+            raise ValueError('Stop capture before recalling a scene')
+        feedback=[];targets={}
+        for key,color in zip(('Corner','Hue'),colors):
+            if not self.state.channels[key].follow:
+                feedback.append(key+': Follow Master off; unchanged');continue
+            connected=self.connected if key=='Corner' else getattr(self,'hue_connected',False)
+            if key=='Hue' and connected and not self.hue_caps.get('color'):
+                feedback.append('Hue: RGB unsupported; unchanged');continue
+            if connected:
+                targets[key]=color
+                feedback.append(key+': fading')
+            else:
+                self._model.set_rgb(key,color)
+                feedback.append(key+': saved; disconnected')
+        self.state.scene=scene
+        return ' · '.join(feedback),targets
+
     def publish_demo_meters(self,meters):pass
     def close(self):
         if self.closed:return
