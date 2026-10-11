@@ -223,7 +223,10 @@ class StudioWindow(QMainWindow):
         for card in self.scenes.cards:card.setFixedHeight(84 if music or compact else 92)
         panels=[self.master,self.audio_panel,self.scenes,self.channel_panel]
         for panel in panels:self.dashboard_layout.removeWidget(panel)
-        order=[self.master,self.channel_panel,self.audio_panel,self.scenes] if compact else [self.master,self.audio_panel,self.channel_panel,self.scenes] if music else panels
+        # Device controls must remain visible at desktop height in Studio.
+        # Scenes can extend below the fold in the scroll area; the device
+        # rows cannot, because they are primary controls.
+        order=[self.master,self.channel_panel,self.audio_panel,self.scenes] if compact else [self.master,self.audio_panel,self.channel_panel,self.scenes]
         for i,panel in enumerate(order):self.dashboard_layout.insertWidget(i,panel)
         self.dashboard_layout.setSpacing(12 if music else 6 if not compact else 8)
         if not restoring:
