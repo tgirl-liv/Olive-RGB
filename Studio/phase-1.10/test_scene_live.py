@@ -131,11 +131,31 @@ class SceneTests(unittest.TestCase):
         middle=a.state.channels['Corner'].color
         self.assertNotEqual(middle,'#FF995D')
         self.assertNotEqual(middle,'#F32E83')
-        self.click_scene(w,'Ocean Breeze')
+        w.c.select_scene('Ocean Breeze')
         self.assertEqual(w._scene_fade.source['Corner'],tuple(int(middle[i:i+2],16) for i in (1,3,5)))
         self.wait(lambda:w._scene_fade is None)
         self.assertEqual(a.state.channels['Corner'].color,'#2365DD')
         self.assertTrue(w.c.scene_active)
+
+    def test_mode_change_cancels_active_fade(self):
+        w=self.window();w.c.set_transition(2.,'Smooth')
+        self.f.f.corner.connect(w.c.adapter)
+        w.c.select_scene('Cyber Night')
+        self.assertIsNotNone(w._scene_fade)
+        w.request_mode('Music')
+        self.assertIsNone(w._scene_fade)
+        self.assertFalse(w.scene_timer.isActive())
+        self.assertFalse(w.c.scene_active)
+        self.wait(lambda:w.c.adapter.music_active)
+
+    def test_disconnected_and_opted_out_routes_do_not_fade(self):
+        w=self.window();w.c.set_transition(2.,'Smooth')
+        w.c.state.channels['Hue'].follow=False
+        previous=w.c.state.channels['Hue'].color
+        w.c.select_scene('Neon Party')
+        self.assertIsNone(w._scene_fade)
+        self.assertEqual(w.c.state.channels['Corner'].color,'#EF27DA')
+        self.assertEqual(w.c.state.channels['Hue'].color,previous)
 
     def test_live_transition_settings_persist(self):
         with tempfile.TemporaryDirectory() as directory:
