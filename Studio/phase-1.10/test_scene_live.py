@@ -157,6 +157,19 @@ class SceneTests(unittest.TestCase):
         self.assertEqual(w.c.state.channels['Corner'].color,'#EF27DA')
         self.assertEqual(w.c.state.channels['Hue'].color,previous)
 
+    def test_manual_color_edit_interrupts_fade(self):
+        w=self.window();a=w.c.adapter
+        self.f.f.corner.connect(a)
+        w.c.set_transition(2.,'Linear')
+        w.c.select_scene('Cyber Night')
+        self.assertIsNotNone(w._scene_fade)
+        w.c.select_channel('Corner')
+        w.c.apply_manual('color','#123456')
+        self.assertIsNone(w._scene_fade)
+        self.assertFalse(w.c.scene_active)
+        QTest.qWait(150)
+        self.assertEqual(a.state.channels['Corner'].color,'#123456')
+
     def test_live_transition_settings_persist(self):
         with tempfile.TemporaryDirectory() as directory:
             path=Path(directory)/'preferences-v1.json'
