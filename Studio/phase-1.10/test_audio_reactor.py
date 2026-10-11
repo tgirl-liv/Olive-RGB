@@ -94,8 +94,11 @@ class ReactorTests(unittest.TestCase):
             demo.levels=levels[:];live.levels=levels[:];demo.peaks=peaks[:];live.peaks=peaks[:]
             demo.meter_values=meters[:];live.meter_values=meters[:]
             demo_image=demo.grab().toImage();live_image=live.grab().toImage()
-            # Floating curve differs by design; bars, gradients, peaks and meters match.
-            self.assertEqual(demo_image.copy(0,150,720,90),live_image.copy(0,150,720,90))
+            # LIVE reserves vertical space for its floating curve, so the
+            # spectrum bars are deliberately shorter than in DEMO. The
+            # shared painter must still produce identical bottom meters.
+            self.assertEqual(demo_image.copy(0,206,720,34),live_image.copy(0,206,720,34))
+            self.assertNotEqual(demo_image.copy(0,150,720,45),live_image.copy(0,150,720,45))
             self.assertNotEqual(demo_image.copy(0,40,720,80),live_image.copy(0,40,720,80))
             self.assertEqual(len(live.gradients),72)
         finally:live.reset_live();live.close();live.deleteLater()
